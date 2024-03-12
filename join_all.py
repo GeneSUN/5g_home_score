@@ -6,7 +6,6 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 import sys 
 
-        
 if __name__ == "__main__":
     
     spark = SparkSession.builder\
@@ -20,7 +19,7 @@ if __name__ == "__main__":
     days_before = 2
     d = ( date.today() - timedelta(days_before) ).strftime("%Y-%m-%d")
     
-    # 1. cust_line --------- --------- --------- --------- --------- --------- --------- --------- ---------
+    # 1.1. cust_line --------- --------- --------- --------- --------- --------- --------- --------- ---------
     df_cust = spark.read.option("recursiveFileLookup", "true").option("header", "true")\
                     .csv(hdfs_pa + "/user/kovvuve/EDW_SPARK/cust_line/"+d)\
                     .withColumnRenamed("VZW_IMSI", "imsi")\
@@ -28,19 +27,35 @@ if __name__ == "__main__":
                     .withColumn("imei", F.expr("substring(IMEI, 1, length(IMEI)-1)"))\
                     .withColumn("cpe_model_name", F.split( F.trim(F.col("device_prod_nm")), " "))\
                     .withColumn("cpe_model_name", F.col("cpe_model_name")[F.size("cpe_model_name") -1])\
-                .select("cust_id","imei","imsi","mdn_5g","pplan_cd","pplan_desc","cpe_model_name")
+                .select("cust_id","imei","imsi","mdn_5g","cpe_model_name")
+    #.select("cust_id","imei","imsi","mdn_5g","pplan_cd","pplan_desc","cpe_model_name")
     # after filter TECH_GEN == "5G", 1757944/3148538 left
 
     for col_name in df_cust.columns: 
         df_cust = df_cust.withColumnRenamed(col_name, col_name.lower()) 
+
+    # 1.2. tracfone --------- --------- --------- --------- --------- --------- --------- --------- ---------
+    df_tracfone = spark.read.option("header","true").csv( hdfs_pa + "/user/kovvuve/tracfone/tracfone_v3.csv")\
+                        .withColumnRenamed("DEVICE_ID","imei")\
+                        .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
+                        .withColumnRenamed("IMSI_VZ","imsi")\
+                        .withColumnRenamed("MDN","mdn_5g")\
+                        .withColumn("cust_id", F.lit("tracfone"))\
+                        .withColumn("cpe_model_name", F.lit("tracfone"))
+
+    df_id = df_cust.select("cust_id","imei","imsi","mdn_5g","cpe_model_name")\
+                .union( df_tracfone.select("cust_id","imei","imsi","mdn_5g","cpe_model_name") )
+    df_id = df_cust
     # 2. cpe_daily_data_usage --------- --------- --------- --------- --------- --------- --------- ---------
     
     p = hdfs_pd + "/usr/apps/vmas/cpe_daily_data_usage/" + d
     df_datausage = spark.read.option("header","true").csv(p)\
                         .select("cust_id","imei","imsi","mdn_5g","fourg_total_mb","fiveg_total_mb","fiveg_usage_percentage")
     
-    df_5g = df_cust.join(df_datausage.drop("cust_id","imei"),["imsi","mdn_5g"], "left" )
-
+    df_5g = df_id.join(df_datausage.drop("cust_id","imei"),["imsi","mdn_5g"], "left" )
+    
+    # 3. speed_test --------- --------- --------- --------- --------- --------- --------- ---------
+    
     df_postgre = spark.read.parquet( hdfs_pd + "/user/ZheS//5g_homeScore/speed_test/" + d)\
                         .select(F.col("mdn").alias("mdn_5g"),"imei",
                                 F.round(col("downloadresult"), 0).alias("downloadresult"),
@@ -67,7 +82,7 @@ if __name__ == "__main__":
                     .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
                     .withColumn("mdn_5g", F.expr("substring(mdn_5g, 2, length(mdn_5g))"))
 
-    df_5g = df_5g.join(df_crsp,["imei", "imsi", "mdn_5g"], "left" )
+    df_5g = df_5g.join(df_crsp,["imei", "imsi", "mdn_5g"] )
 
     df_5g.write.mode("overwrite")\
         .parquet( hdfs_pd + "/user/ZheS//5g_homeScore/join_df/" + (date.today() - timedelta(1)).strftime("%Y-%m-%d") )
