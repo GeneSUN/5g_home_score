@@ -14,6 +14,7 @@ if __name__ == "__main__":
             .config("spark.sql.adapative.enabled","true")\
             .getOrCreate()
         #
+        
     url = 'jdbc:postgresql://cospvmaspa7.nss.vzwnet.com:5432/fwa' 
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     properties = { 

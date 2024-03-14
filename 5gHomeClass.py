@@ -14,7 +14,7 @@ def get_BRSRP_Avg(values):
 
     if len(values) > 0: 
 
-        avg_linear_scale = np.power(10, np.mean(values) / 10) 
+        avg_linear_scale = np.mean( np.power(10, values/ 10) )
 
         avg_log_scale = np.log10(avg_linear_scale) * 10 
 
@@ -41,12 +41,15 @@ def convert_string_numerical(df, String_typeCols_List):
     return df
 
 class heartbeat():
-    global count_features
+    global count_features,ids
+    ids = ["sn","IMEI","MDN", "IMSI","ModelName"]
     count_features = ["LTERACHAttemptCount", "LTERACHFailureCount", "LTEHandOverAttemptCount", 
             "LTEHandOverFailureCount", "NRSCGChangeCount", "NRSCGChangeFailureCount"]
     def __init__(self, spark_session, df) -> None: 
         self.spark = spark_session 
         self.df = df
+
+        self.window_spec = Window.partitionBy(ids).orderBy("time") 
         self.df_heartbeat = self.numericalDf()
         self.df_ServiceTime = self.createServiceTime()
         self.df_CurrentNetwork = self.createCurrentNetwork()
@@ -81,7 +84,7 @@ class heartbeat():
     
     def createServiceTime(self, df_heartbeat = None):
 
-        window_spec = Window().partitionBy("sn").orderBy("time")
+        window_spec = self.window_spec 
         if df_heartbeat is None:
             df_heartbeat = self.df_heartbeat
         df_ServiceTime = df_heartbeat.filter( (col("ServiceDowntime")!="184467440737095")&
@@ -99,7 +102,7 @@ class heartbeat():
         if df_heartbeat is None:
             df_heartbeat = self.df_ServiceTime
         
-        window_spec = Window().partitionBy("sn").orderBy("time")
+        window_spec = self.window_spec 
         df_heartbeat = df_heartbeat.filter((col("CurrentNetwork").isNotNull()) & 
                                     (col("CurrentNetwork") != "-") & 
                                     (col("CurrentNetwork") != "0") & 
@@ -115,11 +118,7 @@ class heartbeat():
     def createCount(self,df_heartbeat= None):
         if df_heartbeat is None:
             df_heartbeat = self.df_CurrentNetwork
-
-        # List of features to process 
-
-
-        window_spec = Window.partitionBy("sn").orderBy("time") 
+        window_spec = self.window_spec 
         for feature in count_features: 
             # It is tricky of whether | filter( col(feature)!=0 ) |
             df_heartbeat = df_heartbeat\
@@ -142,7 +141,7 @@ class heartbeat():
 
 
         # Apply the UDF to the DataFrame 
-        df_result = df_heartbeat.groupby("sn")\
+        df_result = df_heartbeat.groupby(ids)\
                         .agg( sum("ServiceDowntime_change").alias("ServiceDowntime_sum"),
                             sum("ServiceUptime_change").alias("ServiceUptime_sum"),
                             sum("switch_count").alias("switch_count_sum"),
@@ -167,12 +166,14 @@ class heartbeat():
 if __name__ == "__main__":
     
     spark = SparkSession.builder\
-            .appName('ZheS')\
+            .appName('5gHome_crsp')\
             .config("spark.sql.adapative.enabled","true")\
             .enableHiveSupport().getOrCreate()
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
-    d = ( date.today() - timedelta(2) ).strftime("%Y-%m-%d")
+    #for i in range(15):
+    day_before = 1
+    d = ( date.today() - timedelta(day_before) ).strftime("%Y-%m-%d")
 
     df = spark.read.option("header","true").csv( hdfs_pa + f"/user/kovvuve/owl_history_v3/date={d}" )
 
@@ -181,5 +182,5 @@ if __name__ == "__main__":
 
     ins1.df_groupby.repartition(10)\
                 .write.mode("overwrite")\
-                .parquet( hdfs_pd + "/user/ZheS/5g_homeScore/" + d )
+                .parquet( hdfs_pd + "/user/ZheS/5g_homeScore/crsp_result/" + d )
                 #
