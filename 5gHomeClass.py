@@ -14,15 +14,14 @@ def get_BRSRP_Avg(values):
 
     if len(values) > 0: 
 
-        avg_linear_scale = np.mean( np.power(10, values/ 10) )
-
+        avg_linear_scale = np.mean( np.power(10, np.array(values)/ 10) )
+        #avg_linear_scale = np.power(10, np.mean(values) / 10) 
         avg_log_scale = np.log10(avg_linear_scale) * 10 
 
         return float(avg_log_scale) 
 
     else: 
-        return None 
-
+        return None
 def convert_string_numerical(df, String_typeCols_List): 
     """ 
     This function takes a PySpark DataFrame and a list of column names specified in 'String_typeCols_List'. 
@@ -75,7 +74,7 @@ class heartbeat():
                                                 "LTERACHAttemptCount","LTERACHFailureCount",
                                                 "LTEHandOverAttemptCount","LTEHandOverFailureCount",
                                                 "NRSCGChangeCount","NRSCGChangeFailureCount"] )
-        
+        #
         df_heartbeat = df_heartbeat.filter( col("BRSRP")> -155.0 )\
                                     .filter( col("SNR")< 55.0 )\
                                     .filter( col("CQI")< 15.0 )\
