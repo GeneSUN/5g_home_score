@@ -162,7 +162,7 @@ if __name__ == "__main__":
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
     
-    day_before = 2
+    day_before = 1
     d = ( date.today() - timedelta(day_before) ).strftime("%Y-%m-%d")
 
     homeScore_df = spark.read.parquet(hdfs_pd + "/user/ZheS/5g_homeScore/join_df/"+d)
@@ -202,4 +202,4 @@ if __name__ == "__main__":
 
     df_score.repartition(10)\
             .write.mode("overwrite")\
-            .parquet( hdfs_pd + "/user/ZheS/5g_homeScore/crsp_score/" + d )
+            .parquet( hdfs_pd + "/user/ZheS/5g_homeScore/final_score/" + d )
