@@ -19,7 +19,7 @@ if __name__ == "__main__":
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
 
-    days_before = 2
+    days_before = 1
     d = ( date.today() - timedelta(days_before) ).strftime("%Y-%m-%d")
     try:    
         # 1.1. cust_line --------- --------- --------- --------- --------- --------- --------- --------- ---------

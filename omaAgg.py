@@ -45,6 +45,7 @@ class heartbeat():
         self.spark = spark_session 
         self.df_heartbeat = df_heartbeat
         self.groupby_ids = groupby_ids
+        self.df_left = self.df_heartbeat.select(groupby_ids).distinct()
         self.df_currentNetwork = self.createCurrentNetwork()
         self.df_numerical = self.createNumAvg()
         self.df_result = self.df_left.join(self.df_currentNetwork, self.groupby_ids, "left")\
@@ -70,7 +71,7 @@ class heartbeat():
                                     .withColumn("prev_"+feature, F.lag(feature).over(window_spec))\
                                     .withColumn("switch_count", 
                                             F.when(F.col("prev_"+feature) != F.col(feature) , 1).otherwise(0))\
-                                    .groupby("sn")\
+                                    .groupby(groupby_ids)\
                                     .agg( 
                                         sum("switch_count").alias("switch_count_sum"),
                                         )
@@ -111,7 +112,7 @@ if __name__ == "__main__":
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
     #for i in range(15):
-    day_before = 2
+    day_before = 1
     d = ( date.today() - timedelta(day_before) ).strftime("%Y-%m-%d")
 
     df_crsp_id = spark.read.option("header","true").csv( hdfs_pa + f"/user/kovvuve/owl_history_v3/date={d}" )\
