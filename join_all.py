@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
         df_id = df_cust.select("cust_id","imei","imsi","mdn_5g","cpe_model_name")\
                     .union( df_tracfone.select("cust_id","imei","imsi","mdn_5g","cpe_model_name") )
-        df_id = df_cust
+
         # 2. cpe_daily_data_usage --------- --------- --------- --------- --------- --------- --------- ---------
         
         p = hdfs_pd + "/usr/apps/vmas/cpe_daily_data_usage/" + d
