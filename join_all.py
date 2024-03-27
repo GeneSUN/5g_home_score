@@ -19,7 +19,7 @@ if __name__ == "__main__":
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
 
-    days_before = 1
+    days_before = 2
     d = ( date.today() - timedelta(days_before) ).strftime("%Y-%m-%d")
     try:    
         # 1.1. cust_line --------- --------- --------- --------- --------- --------- --------- --------- ---------
@@ -69,9 +69,9 @@ if __name__ == "__main__":
         
         df_5g = df_5g.join(df_postgre.drop("imei","status","progress"),"mdn_5g", "left" )
 
-        # 4. crsp_result
+        # 4.1. crsp_result
         df_crsp = spark.read.parquet( hdfs_pd + "/user/ZheS/5g_homeScore/crsp_result/" + d )\
-                        .select("sn","imei","imsi",col("mdn").alias("mdn_5g"),
+                        .select("imei","imsi",
                                 "ServicetimePercentage",
                                 "switch_count_sum",
                                 F.round("avg_CQI",2).alias("avg_CQI"),
@@ -82,10 +82,15 @@ if __name__ == "__main__":
                                 F.round("LTERACHFailurePercentage",2).alias("LTERACHFailurePercentage"),
                                 "LTEHandOverFailurePercentage","NRSCGChangeFailurePercentage"
                                 )\
-                        .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
-                        .withColumn("mdn_5g", F.expr("substring(mdn_5g, 2, length(mdn_5g))"))
+                        .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))
+        # 4.2. crsp_result
+        df_oma = spark.read.parquet(hdfs_pd + "/user/ZheS/5g_homeScore/oma_result/"+d)
+        crsp_columns = [col for col in df_crsp.columns if col not in df_oma.columns] 
+        for col_name in crsp_columns: 
+            df_oma = df_oma.withColumn(col_name, lit(None)) 
+        union_df = df_crsp.union(df_oma.select(df_crsp.columns)) 
 
-        df_5g = df_5g.join(df_crsp,["imei", "imsi", "mdn_5g"] )
+        df_5g = df_5g.join(union_df,["imei", "imsi"] )
 
         df_5g.write.mode("overwrite")\
             .parquet( hdfs_pd + "/user/ZheS//5g_homeScore/join_df/" + d )
