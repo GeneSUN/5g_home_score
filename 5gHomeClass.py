@@ -164,6 +164,7 @@ class heartbeat():
             df_heartbeat = self.df_heartbeat
 
         df_heartbeat = df_heartbeat.filter( col("BRSRP")> -155.0 )\
+                                    .filter( col("BRSRP")< -20 )\
                                     .filter( col("SNR")< 55.0 )\
                                     .filter( col("CQI")< 15.0 )\
                                     .filter(F.col("MemoryPercentFree").isNotNull() & ~F.isnan("MemoryPercentFree"))\
