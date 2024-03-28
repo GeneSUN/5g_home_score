@@ -8,6 +8,18 @@ import sys
 sys.path.append('/usr/apps/vmas/scripts/ZS') 
 from MailSender import MailSender
 
+def convert_string_numerical(df, String_typeCols_List): 
+    """ 
+    Parameters: 
+    - df (DataFrame): The PySpark DataFrame to be processed. 
+    - String_typeCols_List (list): A list of column names to be cast to double. 
+    """ 
+    # Cast selected columns to double, leaving others as they are 
+    df = df.select([F.col(column).cast('double') 
+                        if column in String_typeCols_List else F.col(column) 
+                        for column in df.columns]) 
+    return df
+
 
 if __name__ == "__main__":
     mail_sender = MailSender()
@@ -23,6 +35,8 @@ if __name__ == "__main__":
     d = ( date.today() - timedelta(days_before) ).strftime("%Y-%m-%d")
     try:    
         # 1.1. cust_line --------- --------- --------- --------- --------- --------- --------- --------- ---------
+        cust_columns = ["cust_id","imei","imsi","mdn_5g","cpe_model_name","PPLAN_DESC"]
+        cpe_models_to_keep =  ["ARC-XCI55AX", "ASK-NCQ1338FA", "WNC-CR200A", "ASK-NCQ1338", "FSNO21VA", "NCQ1338E",'Others'] 
         df_cust = spark.read.option("recursiveFileLookup", "true").option("header", "true")\
                         .csv(hdfs_pa + "/user/kovvuve/EDW_SPARK/cust_line/"+d)\
                         .withColumnRenamed("VZW_IMSI", "imsi")\
@@ -30,7 +44,10 @@ if __name__ == "__main__":
                         .withColumn("imei", F.expr("substring(IMEI, 1, length(IMEI)-1)"))\
                         .withColumn("cpe_model_name", F.split( F.trim(F.col("device_prod_nm")), " "))\
                         .withColumn("cpe_model_name", F.col("cpe_model_name")[F.size("cpe_model_name") -1])\
-                    .select("cust_id","imei","imsi","mdn_5g","cpe_model_name")\
+                        .withColumn("cpe_model_name", 
+                                      when(col("cpe_model_name").isin(cpe_models_to_keep), col("cpe_model_name")) 
+                                          .otherwise("Others"))\
+                    .select(*cust_columns)\
                     .dropDuplicates()
         #.select("cust_id","imei","imsi","mdn_5g","pplan_cd","pplan_desc","cpe_model_name")
         # after filter TECH_GEN == "5G", 1757944/3148538 left
@@ -46,10 +63,11 @@ if __name__ == "__main__":
                             .withColumnRenamed("MDN","mdn_5g")\
                             .withColumn("cust_id", F.lit("tracfone"))\
                             .withColumn("cpe_model_name", F.lit("tracfone"))\
+                            .withColumn("PPLAN_DESC", F.lit("tracfone"))\
                             .dropDuplicates()
 
-        df_id = df_cust.select("cust_id","imei","imsi","mdn_5g","cpe_model_name")\
-                    .union( df_tracfone.select("cust_id","imei","imsi","mdn_5g","cpe_model_name") )
+        df_id = df_cust.select(*cust_columns)\
+                    .union( df_tracfone.select(*cust_columns) )
 
         # 2. cpe_daily_data_usage --------- --------- --------- --------- --------- --------- --------- ---------
         
@@ -57,7 +75,9 @@ if __name__ == "__main__":
         df_datausage = spark.read.option("header","true").csv(p)\
                             .select("cust_id","imei","imsi","mdn_5g","fourg_total_mb","fiveg_total_mb","fiveg_usage_percentage")\
                             .dropDuplicates()
-        
+        df_datausage = convert_string_numerical(df_datausage,["fourg_total_mb","fiveg_total_mb","fiveg_usage_percentage"])\
+                                    .withColumn("data_usage", col("fourg_total_mb")+col("fiveg_total_mb") )
+
         df_5g = df_id.join(df_datausage.drop("cust_id","imei"),["imsi","mdn_5g"], "left" )
         
         # 3. speed_test --------- --------- --------- --------- --------- --------- --------- ---------
@@ -104,7 +124,7 @@ if __name__ == "__main__":
                     subject = f"5gHomeScoreJoinAll success !!! at {d}", 
                     text = "success")
     except Exception as e:
-        
+        print(e)
         mail_sender.send( send_from ="5gHomeScoreJoinAll@verizon.com", 
                             subject = f"5gHomeScoreJoinAll failed !!! at {d}", 
                             text = e)
