@@ -27,6 +27,7 @@ if __name__ == "__main__":
     (SELECT * 
     FROM speedtest_vmb_v2  
     WHERE TO_TIMESTAMP(transactioncreatedate, 'Mon DD, YYYY hh:mi:ss PM') >= CURRENT_DATE - INTERVAL '1 days' 
+    AND TO_TIMESTAMP(transactioncreatedate, 'Mon DD, YYYY hh:mi:ss PM') < CURRENT_DATE
     AND status <> 'FAILED'
     ) AS subquery 
     """ 
