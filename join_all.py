@@ -30,7 +30,8 @@ if __name__ == "__main__":
                         .withColumn("imei", F.expr("substring(IMEI, 1, length(IMEI)-1)"))\
                         .withColumn("cpe_model_name", F.split( F.trim(F.col("device_prod_nm")), " "))\
                         .withColumn("cpe_model_name", F.col("cpe_model_name")[F.size("cpe_model_name") -1])\
-                    .select("cust_id","imei","imsi","mdn_5g","cpe_model_name")
+                    .select("cust_id","imei","imsi","mdn_5g","cpe_model_name")\
+                    .dropDuplicates()
         #.select("cust_id","imei","imsi","mdn_5g","pplan_cd","pplan_desc","cpe_model_name")
         # after filter TECH_GEN == "5G", 1757944/3148538 left
 
@@ -44,7 +45,8 @@ if __name__ == "__main__":
                             .withColumnRenamed("IMSI_VZ","imsi")\
                             .withColumnRenamed("MDN","mdn_5g")\
                             .withColumn("cust_id", F.lit("tracfone"))\
-                            .withColumn("cpe_model_name", F.lit("tracfone"))
+                            .withColumn("cpe_model_name", F.lit("tracfone"))\
+                            .dropDuplicates()
 
         df_id = df_cust.select("cust_id","imei","imsi","mdn_5g","cpe_model_name")\
                     .union( df_tracfone.select("cust_id","imei","imsi","mdn_5g","cpe_model_name") )
@@ -53,7 +55,8 @@ if __name__ == "__main__":
         
         p = hdfs_pd + "/usr/apps/vmas/cpe_daily_data_usage/" + d
         df_datausage = spark.read.option("header","true").csv(p)\
-                            .select("cust_id","imei","imsi","mdn_5g","fourg_total_mb","fiveg_total_mb","fiveg_usage_percentage")
+                            .select("cust_id","imei","imsi","mdn_5g","fourg_total_mb","fiveg_total_mb","fiveg_usage_percentage")\
+                            .dropDuplicates()
         
         df_5g = df_id.join(df_datausage.drop("cust_id","imei"),["imsi","mdn_5g"], "left" )
         
@@ -65,7 +68,8 @@ if __name__ == "__main__":
                                     F.round(col("uploadresult"), 0).alias("uploadresult"),
                                     F.round(col("latency"), 0).alias("latency"),
                                     "status","progress")\
-                            .filter( col("progress") == 100)
+                            .filter( col("progress") == 100)\
+                            .dropDuplicates()
         
         df_5g = df_5g.join(df_postgre.drop("imei","status","progress"),"mdn_5g", "left" )
 
@@ -82,15 +86,16 @@ if __name__ == "__main__":
                                 F.round("LTERACHFailurePercentage",2).alias("LTERACHFailurePercentage"),
                                 "LTEHandOverFailurePercentage","NRSCGChangeFailurePercentage"
                                 )\
-                        .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))
+                        .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
+                        .dropDuplicates()
         # 4.2. crsp_result
         df_oma = spark.read.parquet(hdfs_pd + "/user/ZheS/5g_homeScore/oma_result/"+d)
         crsp_columns = [col for col in df_crsp.columns if col not in df_oma.columns] 
         for col_name in crsp_columns: 
             df_oma = df_oma.withColumn(col_name, lit(None)) 
-        union_df = df_crsp.union(df_oma.select(df_crsp.columns)) 
+        union_df = df_crsp.union(df_oma.select(df_crsp.columns)).dropDuplicates()
 
-        df_5g = df_5g.join(union_df,["imei", "imsi"] )
+        df_5g = df_5g.join(union_df,["imei", "imsi"] ).dropDuplicates()
 
         df_5g.write.mode("overwrite")\
             .parquet( hdfs_pd + "/user/ZheS//5g_homeScore/join_df/" + d )
