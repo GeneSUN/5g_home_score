@@ -55,7 +55,7 @@ if __name__ == "__main__":
         for col_name in df_cust.columns: 
             df_cust = df_cust.withColumnRenamed(col_name, col_name.lower()) 
 
-        # 1.2. cust_line --------- --------- --------- --------- --------- --------- --------- --------- ---------
+        # 1.2. tracfone --------- --------- --------- --------- --------- --------- --------- --------- ---------
         df_tracfone = spark.read.option("header","true").csv( hdfs_pa + "/user/kovvuve/tracfone/tracfone_v3.csv")\
                             .withColumnRenamed("DEVICE_ID","imei")\
                             .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
@@ -95,7 +95,7 @@ if __name__ == "__main__":
 
         # 4.1. crsp_result
         df_crsp = spark.read.parquet( hdfs_pd + "/user/ZheS/5g_homeScore/crsp_result/" + d )\
-                        .select("imei","imsi",
+                        .select("imei","imsi", 
                                 "ServicetimePercentage",
                                 "switch_count_sum",
                                 F.round("avg_CQI",2).alias("avg_CQI"),
@@ -108,7 +108,7 @@ if __name__ == "__main__":
                                 )\
                         .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
                         .dropDuplicates()
-        # 4.2. crsp_result
+        # 4.2. oma_result
         df_oma = spark.read.parquet(hdfs_pd + "/user/ZheS/5g_homeScore/oma_result/"+d)
         crsp_columns = [col for col in df_crsp.columns if col not in df_oma.columns] 
         for col_name in crsp_columns: 
@@ -117,12 +117,22 @@ if __name__ == "__main__":
 
         df_5g = df_5g.join(union_df,["imei", "imsi"] ).dropDuplicates()
 
+        # 5. reset table
+        df_reset = spark.read.option("header", "true").csv( hdfs_pa + f"/fwa_agg/fwa_reset_raw/date={d}" )\
+                        .groupby("sn")\
+                        .agg( count("*").alias("reset_count") )
+
+        p = f"/usr/apps/vmas/5g_data/fixed_5g_router_mac_sn_mapping/{d}/fixed_5g_router_mac_sn_mapping.csv"
+        df_map = spark.read.option("header", "true").csv(hdfs_pd + p)\
+                        .select("imei", col("serialnumber").alias("sn") )\
+                        .dropDuplicates()
+
+        df_5g = df_5g.join( df_map, ["imei"], "left")\
+                    .join( df_reset, "sn", "left" )
+        # -------------------------------------------------------------------------------------
         df_5g.write.mode("overwrite")\
             .parquet( hdfs_pd + "/user/ZheS//5g_homeScore/join_df/" + d )
         
-        mail_sender.send( send_from ="5gHomeScoreJoinAll@verizon.com", 
-                    subject = f"5gHomeScoreJoinAll success !!! at {d}", 
-                    text = "success")
     except Exception as e:
         print(e)
         mail_sender.send( send_from ="5gHomeScoreJoinAll@verizon.com", 
