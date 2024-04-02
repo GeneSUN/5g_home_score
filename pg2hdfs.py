@@ -32,7 +32,11 @@ if __name__ == "__main__":
     ) AS subquery 
     """ 
 
-    df_postgre = spark.read.jdbc(url=url, table=query, properties=properties) 
+    df_postgre = spark.read.jdbc(url=url, table=query, properties=properties)\
+                    .withColumn("scaled_uploadresult", col("scaled_uploadresult").cast("double"))\
+                    .withColumn("scaled_downloadresult", col("scaled_downloadresult").cast("double"))\
+                    .withColumn("scaled_latency", col("scaled_latency").cast("double"))
+    
     df_postgre.write.mode("overwrite")\
         .parquet( hdfs_pd + "/user/ZheS//5g_homeScore/speed_test/" + (date.today() - timedelta(1)).strftime("%Y-%m-%d") )
     
