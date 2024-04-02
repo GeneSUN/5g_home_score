@@ -98,6 +98,7 @@ if __name__ == "__main__":
                         .select("imei","imsi", 
                                 "ServicetimePercentage",
                                 "switch_count_sum",
+                                "percentageReceived",
                                 F.round("avg_CQI",2).alias("avg_CQI"),
                                 F.round("avg_MemoryPercentFree",2).alias("avg_MemoryPercentFree"),
                                 F.round("log_avg_BRSRP",2).alias("log_avg_BRSRP"),
