@@ -128,8 +128,8 @@ if __name__ == "__main__":
         scaled_features = ["downloadresult","uploadresult","avg_CQI","log_avg_BRSRP","log_avg_SNR","log_avg_5GSNR","sqrt_data_usage"]
         scaled_features_reverse = ["latency"]
         shift_features_reverse = ["fiveg_usage_percentage"]
-        raw_features_reverse = ["ServicetimePercentage","switch_count_sum"]
-
+        raw_features_reverse = ["ServicetimePercentage","switch_count_sum","reset_count"]
+        raw_features = ["percentageReceived"]
         df_score = homeScore_df 
 
         for feature in scaled_features: 
@@ -138,8 +138,8 @@ if __name__ == "__main__":
         for feature in scaled_features_reverse: 
             df_score = featureToScore(df_score, feature, reverse=True) 
 
-        #for feature in raw_features:
-        #    df_score = df_score.withColumn( f"scaled_{feature}", F.round( col(feature),2 ) )
+        for feature in raw_features:
+            df_score = df_score.withColumn( f"scaled_{feature}", F.round( col(feature),2 ) )
 
         for feature in raw_features_reverse:
 
@@ -169,6 +169,10 @@ if __name__ == "__main__":
                             "scaled_fiveg_usage_percentage": 0.5, 
                             "scaled_sqrt_data_usage": 0.3, 
                         } 
+        deviceScore_weights = {
+                                "scaled_percentageReceived",
+                                "scaled_reset_count"
+                                }
         
         score_calculator_network = ScoreCalculator(networkScore_weights) 
         network_score_udf = udf(score_calculator_network.calculate_score, FloatType()) 
@@ -176,8 +180,12 @@ if __name__ == "__main__":
         score_calculator_data = ScoreCalculator(dataScore_weights) 
         data_score_udf = udf(score_calculator_data.calculate_score, FloatType()) 
 
+        score_calculator_device = ScoreCalculator(deviceScore_weights) 
+        device_score_udf = udf(score_calculator_device.calculate_score, FloatType()) 
+
         df_score = df_score.withColumn("dataScore", F.round( data_score_udf(*[col(c) for c in list( dataScore_weights.keys() ) ] ),2) )\
-                            .withColumn("networkScore", F.round( network_score_udf(*[col(c) for c in list( networkScore_weights.keys() ) ] ),2) )
+                            .withColumn("networkScore", F.round( network_score_udf(*[col(c) for c in list( networkScore_weights.keys() ) ] ),2) )\
+                            .withColumn("deviceScore", F.round( network_score_udf(*[col(c) for c in list( deviceScore_weights.keys() ) ] ),2) )
         
         df_score.repartition(10)\
                 .write.mode("overwrite")\
