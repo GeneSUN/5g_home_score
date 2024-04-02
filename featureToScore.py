@@ -16,72 +16,20 @@ def convert_string_numerical(df, String_typeCols_List):
 
     return df 
 
-@udf(returnType=FloatType())
-def calculate_DataScore(switch_count_sum, fiveg_usage_percentage, sqrt_data_usage): 
-
-    weight_switch_count_sum = 0.2 
-    
-    weight_fiveg_usage_percentage = 0.5 
-    
-    weight_sqrt_data_usage = 0.3 
-
-    if switch_count_sum is None and fiveg_usage_percentage is None and sqrt_data_usage is None: 
-        return None 
-    else: 
-        total_weight = 0 
-        score = 0 
-        if switch_count_sum is not None: 
-            score += weight_switch_count_sum * switch_count_sum 
-            total_weight += weight_switch_count_sum 
-        if fiveg_usage_percentage is not None: 
-            score += weight_fiveg_usage_percentage * fiveg_usage_percentage 
-            total_weight += weight_fiveg_usage_percentage 
-        if sqrt_data_usage is not None: 
-            score += weight_sqrt_data_usage * sqrt_data_usage 
-            total_weight += weight_sqrt_data_usage 
-        return score / total_weight 
-        
-@udf(returnType=FloatType())
-def calculate_NetworkScore( log_avg_BRSRP, avg_CQI, log_avg_SNR, log_avg_5GSNR, uploadresult, downloadresult, latency): 
-
-    weight_log_avg_BRSRP = 0.1 
-    weight_avg_CQI = 0.1
-    weight_log_avg_SNR = 0.1
-    weight_log_avg_5GSNR = 0.1 
-    weight_uploadresult = 0.2
-    weight_downloadresult = 0.2 
-    weight_latency = 0.2
-        
-    total_weight = 0 
-    score = 0 
-    if log_avg_BRSRP is None and avg_CQI is None and log_avg_SNR is None and log_avg_5GSNR is None and uploadresult is None and downloadresult is None and latency is None: 
-        return None 
-    else: 
+class ScoreCalculator: 
+    def __init__(self, weights): 
+        self.weights = weights 
+ 
+    def calculate_score(self, *args): 
         total_weight = 0 
         score = 0 
 
-        if log_avg_BRSRP is not None:  
-            score += weight_log_avg_BRSRP * float(log_avg_BRSRP)  
-            total_weight += weight_log_avg_BRSRP  
-        if avg_CQI is not None:  
-            score += weight_avg_CQI * float(avg_CQI)  
-            total_weight += weight_avg_CQI  
-        if log_avg_SNR is not None:  
-            score += weight_log_avg_SNR * float(log_avg_SNR)  
-            total_weight += weight_log_avg_SNR  
-        if log_avg_5GSNR is not None:  
-            score += weight_log_avg_5GSNR * float(log_avg_5GSNR)  
-            total_weight += weight_log_avg_5GSNR  
-        if uploadresult is not None:  
-            score += weight_uploadresult * float(uploadresult)  
-            total_weight += weight_uploadresult  
-        if downloadresult is not None:  
-            score += weight_downloadresult * float(downloadresult)  
-            total_weight += weight_downloadresult  
-        if latency is not None:  
-            score += weight_latency * float(latency)  
-            total_weight += weight_latency  
-        return score / total_weight  
+        for weight, value in zip(self.weights.values(), args): 
+            if value is not None: 
+                score += weight * float(value) 
+                total_weight += weight 
+
+        return score / total_weight if total_weight != 0 else None 
 
 def featureToScore(homeScore_df, feature, reverse=False): 
 
@@ -194,7 +142,7 @@ if __name__ == "__main__":
         #    df_score = df_score.withColumn( f"scaled_{feature}", F.round( col(feature),2 ) )
 
         for feature in raw_features_reverse:
-            #df_score = df_score.withColumn( f"scaled_{feature}", F.round( 100 - col(feature) ) )
+
             df_score = df_score.withColumn(f"scaled_{feature}",  
                                     F.round(when(100 - col(feature) < 0, 0) 
                                             .otherwise(100 - col(feature)), 2))\
@@ -203,14 +151,34 @@ if __name__ == "__main__":
                                             F.when(F.col(f"scaled_{feature}") < 0, 0) 
                                             .when(F.col(f"scaled_{feature}") > 100, 100) 
                                             .otherwise(F.col(f"scaled_{feature}")) 
-                                        )
+                                        )# second withColumn seems redundant, i keep here in case it is needed
         for feature in shift_features_reverse: 
             df_score = featureToScoreShfit(df_score, feature, reverse=True) 
         
+        networkScore_weights = { 
+                                "scaled_log_avg_BRSRP": 0.1, 
+                                "scaled_avg_CQI": 0.1, 
+                                "scaled_log_avg_SNR": 0.1, 
+                                "scaled_log_avg_5GSNR": 0.1, 
+                                "scaled_uploadresult": 0.2, 
+                                "scaled_downloadresult": 0.2, 
+                                "scaled_latency": 0.2 
+                            }  
+        dataScore_weights = { 
+                            "scaled_switch_count_sum": 0.2, 
+                            "scaled_fiveg_usage_percentage": 0.5, 
+                            "scaled_sqrt_data_usage": 0.3, 
+                        } 
+        
+        score_calculator_network = ScoreCalculator(networkScore_weights) 
+        network_score_udf = udf(score_calculator_network.calculate_score, FloatType()) 
 
-        df_score = df_score.withColumn("dataScore", F.round( calculate_DataScore("scaled_switch_count_sum", "scaled_fiveg_usage_percentage", "scaled_sqrt_data_usage"),2)  )
-        df_score = df_score.withColumn("NetworkScore", F.round( calculate_NetworkScore("scaled_log_avg_BRSRP", "scaled_avg_CQI", "scaled_log_avg_SNR", "scaled_log_avg_5GSNR", "scaled_uploadresult", "scaled_downloadresult", "scaled_latency"),2) )
+        score_calculator_data = ScoreCalculator(dataScore_weights) 
+        data_score_udf = udf(score_calculator_data.calculate_score, FloatType()) 
 
+        df_score = df_score.withColumn("dataScore", F.round( data_score_udf(*[col(c) for c in list( dataScore_weights.keys() ) ] ),2) )\
+                            .withColumn("networkScore", F.round( network_score_udf(*[col(c) for c in list( networkScore_weights.keys() ) ] ),2) )
+        
         df_score.repartition(10)\
                 .write.mode("overwrite")\
                 .parquet( hdfs_pd + "/user/ZheS/5g_homeScore/final_score/" + d )
