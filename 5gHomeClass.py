@@ -7,8 +7,10 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 import numpy as np
 import sys 
-
+sys.path.append('/usr/apps/vmas/scripts/ZS') 
+from MailSender import MailSender
 from pyspark.sql.functions import from_unixtime 
+
 @udf(returnType=FloatType())
 def get_BRSRP_Avg(values):
 
@@ -60,6 +62,7 @@ class heartbeat():
                                     .join(self.df_CurrentNetwork, "sn", "left")\
                                     .join(self.df_CreateCount, "sn", "left")\
                                     .join(self.df_groupby, "sn", "left") 
+        
     def numericalDf(self, df_heartbeat = None):
         if df_heartbeat is None:
             df_heartbeat = self.df_heartbeat
@@ -80,8 +83,6 @@ class heartbeat():
                                                 "LTEHandOverAttemptCount","LTEHandOverFailureCount",
                                                 "NRSCGChangeCount","NRSCGChangeFailureCount"] )
         
-
-
         return df_heartbeat
     
     def createServiceTime(self, df_heartbeat = None):
@@ -189,16 +190,19 @@ class heartbeat():
                                     F.collect_list("SNR").alias("SNR_list"),
                                     avg("CQI").alias("avg_CQI"),
                                     avg("MemoryPercentFree").alias("avg_MemoryPercentFree"),
+                                    count("*").alias("count_received")
                                     )\
                                 .withColumn("log_avg_BRSRP", get_BRSRP_Avg(F.col("BRSRP_list")))\
                                 .withColumn("log_avg_5GSNR", get_BRSRP_Avg(F.col("5GSNR_list")))\
                                 .withColumn("log_avg_SNR", get_BRSRP_Avg(F.col("SNR_list")))\
+                                .withColumn("count_received", F.when(F.col("count_received") > 230, 230).otherwise(F.col("count_received")))\
+                                .withColumn("percentageReceived", F.round( F.col("count_received")/230, 4 )*100 )\
                                 .drop("BRSRP_list","5GSNR_list","SNR_list")
-
+                                # 230 is the majority number of records for each home in heartbeat
         return df_result
 
 if __name__ == "__main__":
-    
+    mail_sender = MailSender()
     spark = SparkSession.builder\
             .appName('5gHome_crsp')\
             .config("spark.sql.adapative.enabled","true")\
@@ -206,15 +210,21 @@ if __name__ == "__main__":
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
     #for i in range(15):
-    day_before = 1
-    d = ( date.today() - timedelta(day_before) ).strftime("%Y-%m-%d")
+    try:
+        day_before = 1
+        d = ( date.today() - timedelta(day_before) ).strftime("%Y-%m-%d")
 
-    df_heartbeat = spark.read.option("header","true").csv( hdfs_pa + f"/user/kovvuve/owl_history_v3/date={d}" )
+        df_heartbeat = spark.read.option("header","true").csv( hdfs_pa + f"/user/kovvuve/owl_history_v3/date={d}" )
 
-    ins1 = heartbeat( spark_session = spark, 
-                        df_heartbeat = df_heartbeat)
+        ins1 = heartbeat( spark_session = spark, 
+                            df_heartbeat = df_heartbeat)
 
-    ins1.df_result.repartition(10)\
-                .write.mode("overwrite")\
-                .parquet( hdfs_pd + "/user/ZheS/5g_homeScore/crsp_result/" + d )
-                #
+        ins1.df_result.repartition(10)\
+                    .write.mode("overwrite")\
+                    .parquet( hdfs_pd + "/user/ZheS/5g_homeScore/crsp_result/" + d )
+                    #
+    except Exception as e:
+        print(e)
+        mail_sender.send( send_from ="crsp_result@verizon.com", 
+                            subject = f"crsp_result failed !!! at {d}", 
+                            text = e)
