@@ -76,6 +76,50 @@ def featureToScore(homeScore_df, feature, reverse=False):
 
     return df_capped 
 
+def featureToScoreManual(homeScore_df, feature, threshold_dict, reverse=False): 
+
+    @udf(FloatType())
+    def get_threshold_value(pplan_cd, index): 
+    
+        return threshold_dict.get(pplan_cd, [None, None, None])[index] 
+                                    
+    df_with_percentiles = homeScore_df.withColumn(f"{feature}_lower_5_percentile", when(col("pplan_cd").isin( list( threshold_dict.keys() ) ), get_threshold_value(col("pplan_cd"), lit(0))).otherwise(None))\
+                       .withColumn(f"{feature}_median", when(col("pplan_cd").isin(list(threshold_dict.keys())), get_threshold_value(col("pplan_cd"), lit(1))).otherwise(None))\
+                       .withColumn(f"{feature}_top_95_percentile", when(col("pplan_cd").isin(list(threshold_dict.keys())), get_threshold_value(col("pplan_cd"), lit(2))).otherwise(None)) 
+
+    if not reverse: 
+        scale_factor_below = 60 / (col(f"{feature}_median") - col(f"{feature}_lower_5_percentile")) 
+        scale_factor_above = (100 - 60) / (col(f"{feature}_top_95_percentile") - col(f"{feature}_median")) 
+
+        scaled_result = when( 
+            col(feature) <= col(f"{feature}_median"), 
+            (col(feature) - col(f"{feature}_lower_5_percentile")) * scale_factor_below 
+        ).otherwise( 
+            (col(feature) - col(f"{feature}_median")) * scale_factor_above + 60 
+        ) 
+
+    else: 
+        scale_factor_below = 60 / (col(f"{feature}_top_95_percentile") - col(f"{feature}_median")) 
+        scale_factor_above = (100 - 60) / (col(f"{feature}_median") - col(f"{feature}_lower_5_percentile")) 
+         
+        scaled_result = when( 
+            col(feature) <= col(f"{feature}_median"), 
+            (col(f"{feature}_median") - col(feature)) * scale_factor_below + 60 
+        ).otherwise( 
+            (col(f"{feature}_top_95_percentile") - col(feature)) * scale_factor_above 
+        ) 
+
+    df_scaled = df_with_percentiles.withColumn(f"scaled_{feature}", F.round(scaled_result, 2)) 
+     
+    df_capped = df_scaled.withColumn( 
+                                    f"scaled_{feature}", 
+                                    when(col(f"scaled_{feature}") < 0, 0) 
+                                    .when(col(f"scaled_{feature}") > 100, 100) 
+                                    .otherwise(col(f"scaled_{feature}")) 
+                                ) 
+
+    return df_capped 
+
 def featureToScoreShfit(homeScore_df, feature, reverse=False): 
 
     windowSpec = Window.partitionBy("cpe_model_name") 
@@ -125,11 +169,22 @@ if __name__ == "__main__":
         
         features = ['imei', 'imsi', 'mdn_5g', 'cust_id', 'cpe_model_name', 'fiveg_usage_percentage', 'downloadresult', 'uploadresult', 'latency', 'sn', 'ServicetimePercentage', 'switch_count_sum', 'avg_CQI', 'avg_MemoryPercentFree', 'log_avg_BRSRP', 'log_avg_SNR', 'log_avg_5GSNR', 'LTERACHFailurePercentage', 'LTEHandOverFailurePercentage', 'NRSCGChangeFailurePercentage']
         key_features = ['imei', 'imsi', 'mdn_5g', 'cust_id','sn', 'cpe_model_name']
-        scaled_features = ["downloadresult","uploadresult","avg_CQI","log_avg_BRSRP","log_avg_SNR","log_avg_5GSNR","sqrt_data_usage"]
+
+        scaled_features = ["avg_CQI","log_avg_BRSRP","log_avg_SNR","log_avg_5GSNR","sqrt_data_usage"]
         scaled_features_reverse = ["latency"]
-        shift_features_reverse = ["fiveg_usage_percentage"]
-        raw_features_reverse = ["ServicetimePercentage","switch_count_sum","reset_count"]
-        raw_features = ["percentageReceived"]
+        
+        scaled_features_manual = ["downloadresult","uploadresult"]
+        threshold_dict = {
+                            "38365": [0.0,50.0,100.0],
+                            "50127": [0.0,60.0,100.0],
+                            "50011": [0.0,40.0,90.0]
+                            }
+        shift_features_reverse = []
+        shift_features = ["avg_MemoryPercentFree"]
+        
+        raw_features_reverse = ["ServicetimePercentage","switch_count_sum","reset_count",'LTERACHFailurePercentage', 'LTEHandOverFailurePercentage', 'NRSCGChangeFailurePercentage'] #ServicetimePercentage means drop service time
+        raw_features = ["percentageReceived","fiveg_usage_percentage"]
+        
         df_score = homeScore_df 
 
         for feature in scaled_features: 
@@ -137,12 +192,17 @@ if __name__ == "__main__":
 
         for feature in scaled_features_reverse: 
             df_score = featureToScore(df_score, feature, reverse=True) 
+        """
+        for feature in scaled_features_manual: 
+            df_score = featureToScoreManual(df_score, feature,threshold_dict) 
+        """
+        for feature in shift_features: 
+            df_score = featureToScoreShfit(df_score, feature) 
 
         for feature in raw_features:
             df_score = df_score.withColumn( f"scaled_{feature}", F.round( col(feature),2 ) )
 
         for feature in raw_features_reverse:
-
             df_score = df_score.withColumn(f"scaled_{feature}",  
                                     F.round(when(100 - col(feature) < 0, 0) 
                                             .otherwise(100 - col(feature)), 2))\
@@ -152,8 +212,7 @@ if __name__ == "__main__":
                                             .when(F.col(f"scaled_{feature}") > 100, 100) 
                                             .otherwise(F.col(f"scaled_{feature}")) 
                                         )# second withColumn seems redundant, i keep here in case it is needed
-        for feature in shift_features_reverse: 
-            df_score = featureToScoreShfit(df_score, feature, reverse=True) 
+
         
         networkScore_weights = { 
                                 "scaled_log_avg_BRSRP": 0.1, 
@@ -168,10 +227,10 @@ if __name__ == "__main__":
                             "scaled_switch_count_sum": 0.2, 
                             "scaled_fiveg_usage_percentage": 0.5, 
                             "scaled_sqrt_data_usage": 0.3, 
-                        } 
+                            } 
         deviceScore_weights = {
-                                "scaled_percentageReceived",
-                                "scaled_reset_count"
+                                "scaled_percentageReceived":0.5,
+                                "scaled_reset_count":0.5
                                 }
         
         score_calculator_network = ScoreCalculator(networkScore_weights) 
