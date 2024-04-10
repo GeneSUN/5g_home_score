@@ -169,8 +169,7 @@ if __name__ == "__main__":
         
         features = ['imei', 'imsi', 'mdn_5g', 'cust_id', 'cpe_model_name', 'fiveg_usage_percentage', 'downloadresult', 'uploadresult', 'latency', 'sn', 'ServicetimePercentage', 'switch_count_sum', 'avg_CQI', 'avg_MemoryPercentFree', 'log_avg_BRSRP', 'log_avg_SNR', 'log_avg_5GSNR', 'LTERACHFailurePercentage', 'LTEHandOverFailurePercentage', 'NRSCGChangeFailurePercentage']
         key_features = ['imei', 'imsi', 'mdn_5g', 'cust_id','sn', 'cpe_model_name']
-
-        scaled_features = ["avg_CQI","log_avg_BRSRP","log_avg_SNR","log_avg_5GSNR","sqrt_data_usage"]
+        scaled_features = ["downloadresult","uploadresult","avg_CQI","log_avg_BRSRP","log_avg_SNR","log_avg_5GSNR","sqrt_data_usage"]
         scaled_features_reverse = ["latency"]
         
         scaled_features_manual = ["downloadresult","uploadresult"]
@@ -196,6 +195,8 @@ if __name__ == "__main__":
         for feature in scaled_features_manual: 
             df_score = featureToScoreManual(df_score, feature,threshold_dict) 
         """
+        for feature in shift_features_reverse: 
+            df_score = featureToScoreShfit(df_score, feature, reverse=True) 
         for feature in shift_features: 
             df_score = featureToScoreShfit(df_score, feature) 
 
@@ -212,7 +213,6 @@ if __name__ == "__main__":
                                             .when(F.col(f"scaled_{feature}") > 100, 100) 
                                             .otherwise(F.col(f"scaled_{feature}")) 
                                         )# second withColumn seems redundant, i keep here in case it is needed
-
         
         networkScore_weights = { 
                                 "scaled_log_avg_BRSRP": 0.1, 
