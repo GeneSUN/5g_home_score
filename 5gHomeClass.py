@@ -168,6 +168,7 @@ class heartbeat():
                                     .filter( col("BRSRP")< -20 )\
                                     .filter( col("SNR")< 55.0 )\
                                     .filter( col("CQI")< 15.0 )\
+                                    .filter( col("5GSNR")!= 0 )\
                                     .filter(F.col("MemoryPercentFree").isNotNull() & ~F.isnan("MemoryPercentFree"))\
                                     .withColumn( 
                                                 "5GSNR", 
