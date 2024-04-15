@@ -31,9 +31,9 @@ class ScoreCalculator:
 
         return score / total_weight if total_weight != 0 else None 
 
-def featureToScore(homeScore_df, feature, reverse=False): 
+def featureToScore(homeScore_df, feature, reverse=False, partitionColumn = "cpe_model_name"): 
 
-    windowSpec = Window.partitionBy("cpe_model_name") 
+    windowSpec = Window.partitionBy(partitionColumn) 
 
     medianCol = percentile_approx(feature, 0.5, 10000).over(windowSpec) 
     lower5Col = percentile_approx(feature, 0.01, 10000).over(windowSpec) 
