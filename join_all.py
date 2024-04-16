@@ -24,7 +24,7 @@ def convert_string_numerical(df, String_typeCols_List):
 if __name__ == "__main__":
     mail_sender = MailSender()
     spark = SparkSession.builder\
-            .appName('jdbc_query_example')\
+            .appName('join_all_5gTable')\
             .config("spark.sql.adapative.enabled","true")\
             .getOrCreate()
         #
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     d = ( date.today() - timedelta(days_before) ).strftime("%Y-%m-%d")
     try:    
         # 1.1. cust_line --------- --------- --------- --------- --------- --------- --------- --------- ---------
-        cust_columns = ["cust_id","imei","imsi","mdn_5g","cpe_model_name","PPLAN_DESC"]
+        cust_columns = ["cust_id","imei","imsi","mdn_5g","cpe_model_name","PPLAN_DESC","PPLAN_CD"]
         cpe_models_to_keep =  ["ARC-XCI55AX", "ASK-NCQ1338FA", "WNC-CR200A", "ASK-NCQ1338", "FSNO21VA", "NCQ1338E",'Others'] 
         df_cust = spark.read.option("recursiveFileLookup", "true").option("header", "true")\
                         .csv(hdfs_pa + "/user/kovvuve/EDW_SPARK/cust_line/"+d)\
@@ -64,6 +64,7 @@ if __name__ == "__main__":
                             .withColumn("cust_id", F.lit("tracfone"))\
                             .withColumn("cpe_model_name", F.lit("tracfone"))\
                             .withColumn("PPLAN_DESC", F.lit("tracfone"))\
+                            .withColumn("pplan_cd", F.lit("tracfone"))\
                             .dropDuplicates()
 
         df_id = df_cust.select(*cust_columns)\
