@@ -169,7 +169,9 @@ if __name__ == "__main__":
         
         features = ['imei', 'imsi', 'mdn_5g', 'cust_id', 'cpe_model_name', 'fiveg_usage_percentage', 'downloadresult', 'uploadresult', 'latency', 'sn', 'ServicetimePercentage', 'switch_count_sum', 'avg_CQI', 'avg_MemoryPercentFree', 'log_avg_BRSRP', 'log_avg_SNR', 'log_avg_5GSNR', 'LTERACHFailurePercentage', 'LTEHandOverFailurePercentage', 'NRSCGChangeFailurePercentage']
         key_features = ['imei', 'imsi', 'mdn_5g', 'cust_id','sn', 'cpe_model_name']
-        scaled_features = ["downloadresult","uploadresult","avg_CQI","log_avg_BRSRP","log_avg_SNR","log_avg_5GSNR","sqrt_data_usage"]
+        #scaled_features = ["downloadresult","uploadresult","avg_CQI","log_avg_BRSRP","log_avg_SNR","log_avg_5GSNR","sqrt_data_usage"]
+        scaled_features = ["avg_CQI","log_avg_BRSRP","log_avg_SNR","log_avg_5GSNR","sqrt_data_usage"]
+
         scaled_features_reverse = ["latency"]
         
         scaled_features_manual = ["downloadresult","uploadresult"]
@@ -191,10 +193,11 @@ if __name__ == "__main__":
 
         for feature in scaled_features_reverse: 
             df_score = featureToScore(df_score, feature, reverse=True) 
-        """
+
         for feature in scaled_features_manual: 
-            df_score = featureToScoreManual(df_score, feature,threshold_dict) 
-        """
+            df_score = featureToScore(df_score, feature, partitionColumn = ["cpe_model_name","PPLAN_CD"] ) 
+            #df_score = featureToScoreManual(df_score, feature,threshold_dict) 
+        """        """
         for feature in shift_features_reverse: 
             df_score = featureToScoreShfit(df_score, feature, reverse=True) 
         for feature in shift_features: 
