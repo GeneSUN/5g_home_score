@@ -83,9 +83,15 @@ def featureToScoreManual(homeScore_df, feature, threshold_dict, reverse=False):
     
         return threshold_dict.get(pplan_cd, [None, None, None])[index] 
                                     
-    df_with_percentiles = homeScore_df.withColumn(f"{feature}_lower_5_percentile", when(col("pplan_cd").isin( list( threshold_dict.keys() ) ), get_threshold_value(col("pplan_cd"), lit(0))).otherwise(None))\
-                       .withColumn(f"{feature}_median", when(col("pplan_cd").isin(list(threshold_dict.keys())), get_threshold_value(col("pplan_cd"), lit(1))).otherwise(None))\
-                       .withColumn(f"{feature}_top_95_percentile", when(col("pplan_cd").isin(list(threshold_dict.keys())), get_threshold_value(col("pplan_cd"), lit(2))).otherwise(None)) 
+    df_with_percentiles = homeScore_df.withColumn(f"{feature}_lower_5_percentile", 
+                                                  when(col("pplan_cd").isin( list( threshold_dict.keys() ) ), 
+                                                       get_threshold_value(col("pplan_cd"), lit(0))).otherwise(None))\
+                       .withColumn(f"{feature}_median", 
+                                   when(col("pplan_cd").isin(list(threshold_dict.keys())), 
+                                        get_threshold_value(col("pplan_cd"), lit(1))).otherwise(None))\
+                       .withColumn(f"{feature}_top_95_percentile", 
+                                   when(col("pplan_cd").isin(list(threshold_dict.keys())), 
+                                        get_threshold_value(col("pplan_cd"), lit(2))).otherwise(None)) 
 
     if not reverse: 
         scale_factor_below = 60 / (col(f"{feature}_median") - col(f"{feature}_lower_5_percentile")) 
