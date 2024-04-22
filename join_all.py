@@ -90,7 +90,7 @@ if __name__ == "__main__":
                                     F.round(col("latency"), 0).alias("latency"),
                                     "status","progress")\
                             .filter( col("progress") == 100)\
-                            .dropDuplicates()
+                            .dropDuplicates(subset = ["mdn_5g"])
         
         df_5g = df_5g.join(df_postgre.drop("imei","status","progress"),"mdn_5g", "left" )
 
