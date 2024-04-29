@@ -70,7 +70,7 @@ class heartbeat():
         df_heartbeat = df_heartbeat.dropDuplicates()\
                     .withColumn('time', F.from_unixtime(col('ts') / 1000.0).cast('timestamp'))\
                     .select("time","sn","mac","rowkey","CellID", "IMEI","MDN", "IMSI","ModelName","RebootCause",
-                            "SNR","CQI", "MemoryPercentFree","BRSRP", "5GSNR","5GEARFCN_DL",
+                            "SNR","5GSNR","CQI", "MemoryPercentFree","BRSRP", "4GRSRP","5GEARFCN_DL",
                             "ServiceDowntime","ServiceUptime",
                             "LTERACHAttemptCount","LTERACHFailureCount",
                             "LTEHandOverAttemptCount","LTEHandOverFailureCount",
@@ -78,7 +78,7 @@ class heartbeat():
                             "CurrentNetwork")                    
 
         df_heartbeat = convert_string_numerical( df_heartbeat, 
-                                                ["BRSRP","SNR","5GSNR","CQI","MemoryPercentFree","5GEARFCN_DL",
+                                                ["4GRSRP","BRSRP","SNR","5GSNR","CQI","MemoryPercentFree","5GEARFCN_DL",
                                                 "LTERACHAttemptCount","LTERACHFailureCount",
                                                 "LTEHandOverAttemptCount","LTEHandOverFailureCount",
                                                 "NRSCGChangeCount","NRSCGChangeFailureCount"] )
@@ -186,19 +186,21 @@ class heartbeat():
         # Apply the UDF to the DataFrame 
         df_result = df_heartbeat.groupby("sn")\
                                 .agg( 
+                                    F.collect_list("4GRSRP").alias("4GRSRP_list"),
                                     F.collect_list("BRSRP").alias("BRSRP_list"),
-                                    F.collect_list("5GSNR").alias("5GSNR_list"),
                                     F.collect_list("SNR").alias("SNR_list"),
+                                    F.collect_list("5GSNR").alias("5GSNR_list"),
                                     avg("CQI").alias("avg_CQI"),
                                     avg("MemoryPercentFree").alias("avg_MemoryPercentFree"),
                                     count("*").alias("count_received")
                                     )\
                                 .withColumn("log_avg_BRSRP", get_BRSRP_Avg(F.col("BRSRP_list")))\
+                                .withColumn("log_avg_4GRSRP", get_BRSRP_Avg(F.col("4GRSRP_list")))\
                                 .withColumn("log_avg_5GSNR", get_BRSRP_Avg(F.col("5GSNR_list")))\
                                 .withColumn("log_avg_SNR", get_BRSRP_Avg(F.col("SNR_list")))\
                                 .withColumn("count_received", F.when(F.col("count_received") > 230, 230).otherwise(F.col("count_received")))\
                                 .withColumn("percentageReceived", F.round( F.col("count_received")/230, 4 )*100 )\
-                                .drop("BRSRP_list","5GSNR_list","SNR_list")
+                                .drop("4GRSRP_list","BRSRP_list","5GSNR_list","SNR_list")
                                 # 230 is the majority number of records for each home in heartbeat
         return df_result
 
