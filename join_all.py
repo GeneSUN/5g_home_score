@@ -24,7 +24,7 @@ def convert_string_numerical(df, String_typeCols_List):
 if __name__ == "__main__":
     mail_sender = MailSender()
     spark = SparkSession.builder\
-            .appName('join_all_5gTable')\
+            .appName('jdbc_query_example')\
             .config("spark.sql.adapative.enabled","true")\
             .getOrCreate()
         #
@@ -90,11 +90,13 @@ if __name__ == "__main__":
                                     F.round(col("latency"), 0).alias("latency"),
                                     "status","progress")\
                             .filter( col("progress") == 100)\
-                            .dropDuplicates(subset = ["mdn_5g"])
+                            .dropDuplicates()
         
         df_5g = df_5g.join(df_postgre.drop("imei","status","progress"),"mdn_5g", "left" )
 
         # 4.1. crsp_result
+        path_5g4g = hdfs_pa + f"/user/derek/hb/result/dt={d}/result.csv.gz"
+        df_5g4g = spark.read.option("header", "true").csv(path_5g4g)
         df_crsp = spark.read.parquet( hdfs_pd + "/user/ZheS/5g_homeScore/crsp_result/" + d )\
                         .select("imei","imsi", 
                                 "ServicetimePercentage",
@@ -103,12 +105,15 @@ if __name__ == "__main__":
                                 F.round("avg_CQI",2).alias("avg_CQI"),
                                 F.round("avg_MemoryPercentFree",2).alias("avg_MemoryPercentFree"),
                                 F.round("log_avg_BRSRP",2).alias("log_avg_BRSRP"),
+                                F.round("log_avg_4GRSRP",2).alias("log_avg_4GRSRP"),
                                 F.round("log_avg_SNR",2).alias("log_avg_SNR"),
                                 F.round("log_avg_5GSNR",2).alias("log_avg_5GSNR"),
                                 F.round("LTERACHFailurePercentage",2).alias("LTERACHFailurePercentage"),
                                 "LTEHandOverFailurePercentage","NRSCGChangeFailurePercentage"
                                 )\
                         .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
+                        .join( df_5g4g.select("imsi","hb_total","hb_5g",col("percentage").alias("5gPercentage")), 
+                              ["imsi"] )\
                         .dropDuplicates()
         # 4.2. oma_result
         df_oma = spark.read.parquet(hdfs_pd + "/user/ZheS/5g_homeScore/oma_result/"+d)
