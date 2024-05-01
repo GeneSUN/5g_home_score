@@ -9,6 +9,7 @@ import numpy as np
 import sys 
 sys.path.append('/usr/apps/vmas/scripts/ZS') 
 from MailSender import MailSender
+import argparse 
 
 def convert_string_numerical(df, String_typeCols_List): 
 
@@ -31,7 +32,7 @@ class ScoreCalculator:
 
         return score / total_weight if total_weight != 0 else None 
 
-def featureToScore(homeScore_df, feature, reverse=False, partitionColumn = "cpe_model_name"): 
+def featureToScore(homeScore_df, feature, reverse=False, partitionColumn = "cpe_model_name", middle_threshold = 50): 
 
     windowSpec = Window.partitionBy(partitionColumn) 
 
@@ -44,23 +45,23 @@ def featureToScore(homeScore_df, feature, reverse=False, partitionColumn = "cpe_
                                     .withColumn(f"{feature}_top_95_percentile", top95Col) 
 
     if not reverse: 
-        scale_factor_below = 60 / (col(f"{feature}_median") - col(f"{feature}_lower_5_percentile")) 
-        scale_factor_above = (100 - 60) / (col(f"{feature}_top_95_percentile") - col(f"{feature}_median")) 
+        scale_factor_below = middle_threshold / (col(f"{feature}_median") - col(f"{feature}_lower_5_percentile")) 
+        scale_factor_above = (100 - middle_threshold) / (col(f"{feature}_top_95_percentile") - col(f"{feature}_median")) 
 
         scaled_result = when( 
             col(feature) <= col(f"{feature}_median"), 
             (col(feature) - col(f"{feature}_lower_5_percentile")) * scale_factor_below 
         ).otherwise( 
-            (col(feature) - col(f"{feature}_median")) * scale_factor_above + 60 
+            (col(feature) - col(f"{feature}_median")) * scale_factor_above + middle_threshold 
         ) 
 
     else: 
-        scale_factor_below = 60 / (col(f"{feature}_top_95_percentile") - col(f"{feature}_median")) 
-        scale_factor_above = (100 - 60) / (col(f"{feature}_median") - col(f"{feature}_lower_5_percentile")) 
+        scale_factor_below = middle_threshold / (col(f"{feature}_top_95_percentile") - col(f"{feature}_median")) 
+        scale_factor_above = (100 - middle_threshold) / (col(f"{feature}_median") - col(f"{feature}_lower_5_percentile")) 
          
         scaled_result = when( 
             col(feature) <= col(f"{feature}_median"), 
-            (col(f"{feature}_median") - col(feature)) * scale_factor_below + 60 
+            (col(f"{feature}_median") - col(feature)) * scale_factor_below + middle_threshold 
         ).otherwise( 
             (col(f"{feature}_top_95_percentile") - col(feature)) * scale_factor_above 
         ) 
@@ -74,7 +75,7 @@ def featureToScore(homeScore_df, feature, reverse=False, partitionColumn = "cpe_
                                     .otherwise(col(f"scaled_{feature}")) 
                                 ) 
 
-    return df_capped 
+    return df_capped  
 
 def featureToScoreManual(homeScore_df, feature, threshold_dict, reverse=False): 
 
@@ -83,15 +84,9 @@ def featureToScoreManual(homeScore_df, feature, threshold_dict, reverse=False):
     
         return threshold_dict.get(pplan_cd, [None, None, None])[index] 
                                     
-    df_with_percentiles = homeScore_df.withColumn(f"{feature}_lower_5_percentile", 
-                                                  when(col("pplan_cd").isin( list( threshold_dict.keys() ) ), 
-                                                       get_threshold_value(col("pplan_cd"), lit(0))).otherwise(None))\
-                       .withColumn(f"{feature}_median", 
-                                   when(col("pplan_cd").isin(list(threshold_dict.keys())), 
-                                        get_threshold_value(col("pplan_cd"), lit(1))).otherwise(None))\
-                       .withColumn(f"{feature}_top_95_percentile", 
-                                   when(col("pplan_cd").isin(list(threshold_dict.keys())), 
-                                        get_threshold_value(col("pplan_cd"), lit(2))).otherwise(None)) 
+    df_with_percentiles = homeScore_df.withColumn(f"{feature}_lower_5_percentile", when(col("pplan_cd").isin( list( threshold_dict.keys() ) ), get_threshold_value(col("pplan_cd"), lit(0))).otherwise(None))\
+                       .withColumn(f"{feature}_median", when(col("pplan_cd").isin(list(threshold_dict.keys())), get_threshold_value(col("pplan_cd"), lit(1))).otherwise(None))\
+                       .withColumn(f"{feature}_top_95_percentile", when(col("pplan_cd").isin(list(threshold_dict.keys())), get_threshold_value(col("pplan_cd"), lit(2))).otherwise(None)) 
 
     if not reverse: 
         scale_factor_below = 60 / (col(f"{feature}_median") - col(f"{feature}_lower_5_percentile")) 
@@ -162,7 +157,10 @@ if __name__ == "__main__":
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
     
     day_before = 1
-    d = ( date.today() - timedelta(day_before) ).strftime("%Y-%m-%d")
+    parser = argparse.ArgumentParser(description="Inputs") 
+    parser.add_argument("--date", default=(date.today() - timedelta(day_before) ).strftime("%Y-%m-%d")) 
+    args = parser.parse_args()
+    d = args.date
     try:
         homeScore_df = spark.read.parquet(hdfs_pd + "/user/ZheS/5g_homeScore/join_df/"+d)
         homeScore_df = convert_string_numerical(homeScore_df, ["fourg_total_mb","fiveg_total_mb", "fiveg_usage_percentage"])
@@ -176,21 +174,54 @@ if __name__ == "__main__":
         features = ['imei', 'imsi', 'mdn_5g', 'cust_id', 'cpe_model_name', 'fiveg_usage_percentage', 'downloadresult', 'uploadresult', 'latency', 'sn', 'ServicetimePercentage', 'switch_count_sum', 'avg_CQI', 'avg_MemoryPercentFree', 'log_avg_BRSRP', 'log_avg_SNR', 'log_avg_5GSNR', 'LTERACHFailurePercentage', 'LTEHandOverFailurePercentage', 'NRSCGChangeFailurePercentage']
         key_features = ['imei', 'imsi', 'mdn_5g', 'cust_id','sn', 'cpe_model_name']
         #scaled_features = ["downloadresult","uploadresult","avg_CQI","log_avg_BRSRP","log_avg_SNR","log_avg_5GSNR","sqrt_data_usage"]
-        scaled_features = ["avg_CQI","log_avg_BRSRP","log_avg_SNR","log_avg_5GSNR","sqrt_data_usage"]
+        scaled_features = ["avg_CQI","log_avg_BRSRP","log_avg_4GRSRP","log_avg_SNR","log_avg_5GSNR","sqrt_data_usage"]
 
         scaled_features_reverse = ["latency"]
         
         scaled_features_manual = ["downloadresult","uploadresult"]
-        threshold_dict = {
-                            "38365": [0.0,50.0,100.0],
-                            "50127": [0.0,60.0,100.0],
-                            "50011": [0.0,40.0,90.0]
-                            }
+
+        threshold_dict = { 
+                            '51219': [0.0, 50.0, 100.0], 
+                            '27976': [0.0, 50.0, 100.0], 
+                            '53617': [0.0, 100.0, 200.0], 
+
+                            '48390': [0.0, 5.0, 10.0], 
+                            '48423': [0.0, 12.0, 25.0], 
+                            '48445': [0.0, 25.0, 50.0], 
+                            '46799': [0.0, 12.0, 25.0], 
+                            '46798': [0.0, 5.0, 10.0], 
+
+                            '50010': [0.0, 25.0, 50.0], 
+                            '50011': [0.0, 25.0, 50.0], 
+                            '67577': [0.0, 25.0, 50.0], 
+                            '38365': [0.0, 25.0, 50.0], 
+
+                            '67584': [0.0, 25.0, 50.0], 
+                            '65655': [0.0, 25.0, 50.0], 
+                            '65656': [0.0, 25.0, 50.0], 
+
+                            '50044': [0.0, 85.0, 300.0], 
+                            '50055': [0.0, 85.0, 300.0], 
+                            '50127': [0.0, 85.0, 300.0], 
+                            '50128': [0.0, 85.0, 300.0], 
+                            '67571': [0.0, 50.0, 85.0], 
+                            '67567': [0.0, 85.0, 300.0], 
+
+                            '50129': [0.0, 85.0, 300.0], 
+                            '67576': [0.0, 85.0, 300.0], 
+                            '67568': [0.0, 300.0, 1000.0], 
+                            '50116': [0.0, 300.0, 1000.0], 
+                            '50117': [0.0, 300.0, 1000.0], 
+                            '50130': [0.0, 85.0, 300.0], 
+
+                            '39425': [0.0, 300.0, 1000.0], 
+                            '39428': [0.0, 300.0, 1000.0], 
+                        } 
         shift_features_reverse = []
         shift_features = ["avg_MemoryPercentFree"]
         
         raw_features_reverse = ["ServicetimePercentage","switch_count_sum","reset_count",'LTERACHFailurePercentage', 'LTEHandOverFailurePercentage', 'NRSCGChangeFailurePercentage'] #ServicetimePercentage means drop service time
-        raw_features = ["percentageReceived","fiveg_usage_percentage"]
+        raw_features = ["percentageReceived","fiveg_usage_percentage","5g_uptime"]
         
         df_score = homeScore_df 
 
@@ -202,7 +233,7 @@ if __name__ == "__main__":
 
         for feature in scaled_features_manual: 
             df_score = featureToScore(df_score, feature, partitionColumn = ["cpe_model_name","PPLAN_CD"] ) 
-            #df_score = featureToScoreManual(df_score, feature,threshold_dict) 
+            #df_score = featureToScoreManual(df_score, feature, threshold_dict) 
         """        """
         for feature in shift_features_reverse: 
             df_score = featureToScoreShfit(df_score, feature, reverse=True) 
@@ -223,27 +254,45 @@ if __name__ == "__main__":
                                             .otherwise(F.col(f"scaled_{feature}")) 
                                         )# second withColumn seems redundant, i keep here in case it is needed
         
-        networkScore_weights = { 
-                                "scaled_log_avg_BRSRP": 0.1, 
-                                "scaled_avg_CQI": 0.1, 
-                                "scaled_log_avg_SNR": 0.1, 
-                                "scaled_log_avg_5GSNR": 0.1, 
+        networkSpeedScore_weights = { 
                                 "scaled_uploadresult": 0.2, 
                                 "scaled_downloadresult": 0.2, 
                                 "scaled_latency": 0.2 
+                            } 
+        networkSignalScore_weights = { 
+                                "scaled_log_avg_4GRSRP": 0.2, 
+                                "scaled_log_avg_BRSRP": 0.2, 
+                                "scaled_avg_CQI": 0.2, 
+                                "scaled_log_avg_SNR": 0.2, 
+                                "scaled_log_avg_5GSNR": 0.2, 
                             }  
+        networkFailureScore_weights = { 
+                                "scaled_LTERACHFailurePercentage": 0.5, 
+                                "scaled_LTEHandOverFailurePercentage": 0.25, 
+                                "scaled_NRSCGChangeFailurePercentage": 0.25, 
+                            }  
+
         dataScore_weights = { 
-                            "scaled_switch_count_sum": 0.2, 
+                            "scaled_5g_uptime": 0.2, 
                             "scaled_fiveg_usage_percentage": 0.5, 
                             "scaled_sqrt_data_usage": 0.3, 
+                            
                             } 
         deviceScore_weights = {
-                                "scaled_percentageReceived":0.5,
-                                "scaled_reset_count":0.5
+                                "scaled_switch_count_sum": 0.25, 
+                                "scaled_percentageReceived":0.25,
+                                "scaled_reset_count":0.25,
+                                "avg_MemoryPercentFree":0.25
                                 }
         
-        score_calculator_network = ScoreCalculator(networkScore_weights) 
-        network_score_udf = udf(score_calculator_network.calculate_score, FloatType()) 
+        score_calculator_networkSpeed = ScoreCalculator(networkSpeedScore_weights) 
+        networkSpeed_score_udf = udf(score_calculator_networkSpeed.calculate_score, FloatType()) 
+
+        score_calculator_networkSignal = ScoreCalculator(networkSignalScore_weights) 
+        networkSignal_score_udf = udf(score_calculator_networkSignal.calculate_score, FloatType()) 
+
+        score_calculator_networkFailure = ScoreCalculator(networkFailureScore_weights) 
+        networkFailure_score_udf = udf(score_calculator_networkFailure.calculate_score, FloatType()) 
 
         score_calculator_data = ScoreCalculator(dataScore_weights) 
         data_score_udf = udf(score_calculator_data.calculate_score, FloatType()) 
@@ -251,11 +300,86 @@ if __name__ == "__main__":
         score_calculator_device = ScoreCalculator(deviceScore_weights) 
         device_score_udf = udf(score_calculator_device.calculate_score, FloatType()) 
 
+
         df_score = df_score.withColumn("dataScore", F.round( data_score_udf(*[col(c) for c in list( dataScore_weights.keys() ) ] ),2) )\
-                            .withColumn("networkScore", F.round( network_score_udf(*[col(c) for c in list( networkScore_weights.keys() ) ] ),2) )\
-                            .withColumn("deviceScore", F.round( network_score_udf(*[col(c) for c in list( deviceScore_weights.keys() ) ] ),2) )
-        
-        df_score.repartition(10)\
+                            .withColumn("networkSpeedScore", F.round( networkSpeed_score_udf(*[col(c) for c in list( networkSpeedScore_weights.keys() ) ] ),2) )\
+                            .withColumn("networkSignalScore", F.round( networkSignal_score_udf(*[col(c) for c in list( networkSignalScore_weights.keys() ) ] ),2) )\
+                            .withColumn("networkFailureScore", F.round( networkFailure_score_udf(*[col(c) for c in list( networkFailureScore_weights.keys() ) ] ),2) )\
+                            .withColumn("deviceScore", F.round( device_score_udf(*[col(c) for c in list( deviceScore_weights.keys() ) ] ),2) )
+        """        
+        weights_dicts = { 
+
+            "networkSpeedScore_weights": {  
+
+                "scaled_uploadresult": 0.2,  
+
+                "scaled_downloadresult": 0.2,  
+
+                "scaled_latency": 0.2  
+
+            }, 
+
+            "networkSignalScore_weights": {  
+
+                "scaled_log_avg_4GRSRP": 0.2,  
+
+                "scaled_log_avg_BRSRP": 0.2,  
+
+                "scaled_avg_CQI": 0.2,  
+
+                "scaled_log_avg_SNR": 0.2,  
+
+                "scaled_log_avg_5GSNR": 0.2  
+
+            }, 
+
+            "networkFailureScore_weights": {  
+
+                "scaled_LTERACHFailurePercentage": 0.5,  
+
+                "scaled_LTEHandOverFailurePercentage": 0.25,  
+
+                "scaled_NRSCGChangeFailurePercentage": 0.25  
+
+            }, 
+
+            "dataScore_weights": {  
+
+                "scaled_5g_uptime": 0.2,  
+
+                "scaled_fiveg_usage_percentage": 0.5,  
+
+                "scaled_sqrt_data_usage": 0.3,  
+
+            }, 
+
+            "deviceScore_weights": { 
+
+                "scaled_switch_count_sum": 0.25,  
+
+                "scaled_percentageReceived":0.25, 
+
+                "scaled_reset_count":0.25, 
+
+                "scaled_avg_MemoryPercentFree":0.25 
+
+            } 
+
+        } 
+
+        # Apply UDFs to DataFrame 
+        for key, weights in weights_dicts.items(): 
+
+            score_calculator = ScoreCalculator(weights) 
+
+            score_udf = udf(score_calculator.calculate_score, FloatType()) 
+
+            cols = [col(c) for c in weights.keys()] 
+
+            df_score = df_score.withColumn(key.replace("_weights", ""), F.round(score_udf(*cols), 2)) 
+        """
+        df_score.dropDuplicates()\
+                .repartition(10)\
                 .write.mode("overwrite")\
                 .parquet( hdfs_pd + "/user/ZheS/5g_homeScore/final_score/" + d )
     except Exception as e:
