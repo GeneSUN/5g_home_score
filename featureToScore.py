@@ -77,7 +77,7 @@ def featureToScore(homeScore_df, feature, reverse=False, partitionColumn = "cpe_
 
     return df_capped  
 
-def featureToScoreManual(homeScore_df, feature, threshold_dict, reverse=False): 
+def featureToScoreManual(homeScore_df, feature, threshold_dict, reverse=False, middle_threshold = 50): 
 
     @udf(FloatType())
     def get_threshold_value(pplan_cd, index): 
@@ -89,23 +89,23 @@ def featureToScoreManual(homeScore_df, feature, threshold_dict, reverse=False):
                        .withColumn(f"{feature}_top_95_percentile", when(col("pplan_cd").isin(list(threshold_dict.keys())), get_threshold_value(col("pplan_cd"), lit(2))).otherwise(None)) 
 
     if not reverse: 
-        scale_factor_below = 60 / (col(f"{feature}_median") - col(f"{feature}_lower_5_percentile")) 
-        scale_factor_above = (100 - 60) / (col(f"{feature}_top_95_percentile") - col(f"{feature}_median")) 
+        scale_factor_below = middle_threshold / (col(f"{feature}_median") - col(f"{feature}_lower_5_percentile")) 
+        scale_factor_above = (100 - middle_threshold) / (col(f"{feature}_top_95_percentile") - col(f"{feature}_median")) 
 
         scaled_result = when( 
             col(feature) <= col(f"{feature}_median"), 
             (col(feature) - col(f"{feature}_lower_5_percentile")) * scale_factor_below 
         ).otherwise( 
-            (col(feature) - col(f"{feature}_median")) * scale_factor_above + 60 
+            (col(feature) - col(f"{feature}_median")) * scale_factor_above + middle_threshold
         ) 
 
     else: 
-        scale_factor_below = 60 / (col(f"{feature}_top_95_percentile") - col(f"{feature}_median")) 
-        scale_factor_above = (100 - 60) / (col(f"{feature}_median") - col(f"{feature}_lower_5_percentile")) 
+        scale_factor_below = middle_threshold / (col(f"{feature}_top_95_percentile") - col(f"{feature}_median")) 
+        scale_factor_above = (100 - middle_threshold) / (col(f"{feature}_median") - col(f"{feature}_lower_5_percentile")) 
          
         scaled_result = when( 
             col(feature) <= col(f"{feature}_median"), 
-            (col(f"{feature}_median") - col(feature)) * scale_factor_below + 60 
+            (col(f"{feature}_median") - col(feature)) * scale_factor_below + middle_threshold
         ).otherwise( 
             (col(f"{feature}_top_95_percentile") - col(feature)) * scale_factor_above 
         ) 
