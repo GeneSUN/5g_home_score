@@ -7,6 +7,7 @@ from pyspark.sql import functions as F
 import sys 
 sys.path.append('/usr/apps/vmas/scripts/ZS') 
 from MailSender import MailSender
+import argparse 
 
 def convert_string_numerical(df, String_typeCols_List): 
     """ 
@@ -31,8 +32,11 @@ if __name__ == "__main__":
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
 
-    days_before = 1
-    d = ( date.today() - timedelta(days_before) ).strftime("%Y-%m-%d")
+    day_before = 1
+    parser = argparse.ArgumentParser(description="Inputs") 
+    parser.add_argument("--date", default=(date.today() - timedelta(day_before) ).strftime("%Y-%m-%d")) 
+    args = parser.parse_args()
+    d = args.date
     try:    
         # 1.1. cust_line --------- --------- --------- --------- --------- --------- --------- --------- ---------
         cust_columns = ["cust_id","imei","imsi","mdn_5g","cpe_model_name","PPLAN_DESC","PPLAN_CD"]
@@ -77,8 +81,8 @@ if __name__ == "__main__":
                             .select("cust_id","imei","imsi","mdn_5g","fourg_total_mb","fiveg_total_mb","fiveg_usage_percentage")\
                             .dropDuplicates()
         df_datausage = convert_string_numerical(df_datausage,["fourg_total_mb","fiveg_total_mb","fiveg_usage_percentage"])\
-                                    .withColumn("data_usage", col("fourg_total_mb")+col("fiveg_total_mb") )
-
+                                    .withColumn("data_usage", col("fourg_total_mb")+col("fiveg_total_mb") )\
+                                    .withColumn("sqrt_data_usage", F.sqrt( col("fourg_total_mb")+col("fiveg_total_mb") ) )
         df_5g = df_id.join(df_datausage.drop("cust_id","imei"),["imsi","mdn_5g"], "left" )
         
         # 3. speed_test --------- --------- --------- --------- --------- --------- --------- ---------
@@ -109,10 +113,14 @@ if __name__ == "__main__":
                                 F.round("log_avg_SNR",2).alias("log_avg_SNR"),
                                 F.round("log_avg_5GSNR",2).alias("log_avg_5GSNR"),
                                 F.round("LTERACHFailurePercentage",2).alias("LTERACHFailurePercentage"),
-                                "LTEHandOverFailurePercentage","NRSCGChangeFailurePercentage"
+                                F.round("LTEHandOverFailurePercentage",2).alias("LTEHandOverFailurePercentage"),
+                                F.round("NRSCGChangeFailurePercentage",2).alias("NRSCGChangeFailurePercentage"),
                                 )\
                         .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
-                        .join( df_5g4g.select("imsi","hb_total","hb_5g",col("percentage").alias("5gPercentage")), 
+                        .join( df_5g4g.select("imsi",
+                                              col("hb_total").cast('double'),
+                                              col("hb_5g").cast('double'),
+                                              col("percentage").cast('double').alias("5g_uptime")), 
                               ["imsi"] )\
                         .dropDuplicates()
         # 4.2. oma_result
