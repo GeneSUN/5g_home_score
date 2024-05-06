@@ -5,7 +5,7 @@ from pyspark.sql.types import *
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 import sys 
-
+import argparse 
         
 if __name__ == "__main__":
     
@@ -14,7 +14,13 @@ if __name__ == "__main__":
             .config("spark.sql.adapative.enabled","true")\
             .getOrCreate()
         #
-        
+
+    day_before = 1
+    parser = argparse.ArgumentParser(description="Inputs") 
+    parser.add_argument("--date", default=(date.today() - timedelta(day_before) ).strftime("%Y-%m-%d")) 
+    args = parser.parse_args()
+
+    d = args.date
     url = 'jdbc:postgresql://cospvmaspa7.nss.vzwnet.com:5432/fwa' 
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     properties = { 
@@ -23,11 +29,11 @@ if __name__ == "__main__":
                     'driver': 'org.postgresql.Driver' 
                 } 
 
-    query = """ 
+    query = f""" 
     (SELECT * 
     FROM speedtest_vmb_v2  
-    WHERE TO_TIMESTAMP(transactioncreatedate, 'Mon DD, YYYY hh:mi:ss PM') >= CURRENT_DATE - INTERVAL '1 days' 
-    AND TO_TIMESTAMP(transactioncreatedate, 'Mon DD, YYYY hh:mi:ss PM') < CURRENT_DATE
+    WHERE TO_TIMESTAMP(transactioncreatedate, 'Mon DD, YYYY hh:mi:ss PM') > DATE '{d}'  
+    AND TO_TIMESTAMP(transactioncreatedate, 'Mon DD, YYYY hh:mi:ss PM') <= DATE '{d}' + INTERVAL '1 days' 
     AND status <> 'FAILED'
     ) AS subquery 
     """ 
@@ -38,5 +44,5 @@ if __name__ == "__main__":
                     .withColumn("latency", col("latency").cast("double"))
     
     df_postgre.write.mode("overwrite")\
-        .parquet( hdfs_pd + "/user/ZheS//5g_homeScore/speed_test/" + (date.today() - timedelta(1)).strftime("%Y-%m-%d") )
+        .parquet( hdfs_pd + "/user/ZheS//5g_homeScore/speed_test/" + d )
     
