@@ -25,7 +25,7 @@ def convert_string_numerical(df, String_typeCols_List):
 if __name__ == "__main__":
     mail_sender = MailSender()
     spark = SparkSession.builder\
-            .appName('jdbc_query_example')\
+            .appName('5g_home_join_all_zhes')\
             .config("spark.sql.adapative.enabled","true")\
             .getOrCreate()
         #
@@ -36,126 +36,150 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Inputs") 
     parser.add_argument("--date", default=(date.today() - timedelta(day_before) ).strftime("%Y-%m-%d")) 
     args = parser.parse_args()
-    d = args.date
-    try:    
-        # 1.1. cust_line --------- --------- --------- --------- --------- --------- --------- --------- ---------
-        cust_columns = ["cust_id","imei","imsi","mdn_5g","cpe_model_name","PPLAN_DESC","PPLAN_CD"]
-        cpe_models_to_keep =  ["ARC-XCI55AX", "ASK-NCQ1338FA", "WNC-CR200A", "ASK-NCQ1338", "FSNO21VA", "NCQ1338E",'Others'] 
-        df_cust = spark.read.option("recursiveFileLookup", "true").option("header", "true")\
-                        .csv(hdfs_pa + "/user/kovvuve/EDW_SPARK/cust_line/"+d)\
-                        .withColumnRenamed("VZW_IMSI", "imsi")\
-                        .withColumnRenamed( "mtn","mdn_5g")\
-                        .withColumn("imei", F.expr("substring(IMEI, 1, length(IMEI)-1)"))\
-                        .withColumn("cpe_model_name", F.split( F.trim(F.col("device_prod_nm")), " "))\
-                        .withColumn("cpe_model_name", F.col("cpe_model_name")[F.size("cpe_model_name") -1])\
-                        .withColumn("cpe_model_name", 
-                                      when(col("cpe_model_name").isin(cpe_models_to_keep), col("cpe_model_name")) 
-                                          .otherwise("Others"))\
-                    .select(*cust_columns)\
-                    .dropDuplicates()
-        #.select("cust_id","imei","imsi","mdn_5g","pplan_cd","pplan_desc","cpe_model_name")
-        # after filter TECH_GEN == "5G", 1757944/3148538 left
+    args_date = args.date
+    date_list = [( datetime.strptime( args_date, "%Y-%m-%d" )  - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(2)][::-1]
 
-        for col_name in df_cust.columns: 
-            df_cust = df_cust.withColumnRenamed(col_name, col_name.lower()) 
-
-        # 1.2. tracfone --------- --------- --------- --------- --------- --------- --------- --------- ---------
-        df_tracfone = spark.read.option("header","true").csv( hdfs_pa + "/user/kovvuve/tracfone/tracfone_v3.csv")\
-                            .withColumnRenamed("DEVICE_ID","imei")\
-                            .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
-                            .withColumnRenamed("IMSI_VZ","imsi")\
-                            .withColumnRenamed("MDN","mdn_5g")\
-                            .withColumn("cust_id", F.lit("tracfone"))\
-                            .withColumn("cpe_model_name", F.lit("tracfone"))\
-                            .withColumn("PPLAN_DESC", F.lit("tracfone"))\
-                            .withColumn("pplan_cd", F.lit("tracfone"))\
+    for d in date_list: 
+        try:    
+            spark.read.parquet(hdfs_pd + "/user/ZheS/5g_homeScore/join_df/"+d)
+        except:
+            try:
+                # 1.1. cust_line --------- --------- --------- --------- --------- --------- --------- --------- ---------
+                cust_columns = ["cust_id","imei","imsi","mdn_5g","cpe_model_name","PPLAN_DESC","PPLAN_CD"]
+                cpe_models_to_keep =  ["ARC-XCI55AX", "ASK-NCQ1338FA", "WNC-CR200A", "ASK-NCQ1338", "FSNO21VA", "NCQ1338E",'Others'] 
+                df_cust = spark.read.option("recursiveFileLookup", "true").option("header", "true")\
+                                .csv(hdfs_pa + "/user/kovvuve/EDW_SPARK/cust_line/"+d)\
+                                .withColumnRenamed("VZW_IMSI", "imsi")\
+                                .withColumnRenamed( "mtn","mdn_5g")\
+                                .withColumn("imei", F.expr("substring(IMEI, 1, length(IMEI)-1)"))\
+                                .withColumn("cpe_model_name", F.split( F.trim(F.col("device_prod_nm")), " "))\
+                                .withColumn("cpe_model_name", F.col("cpe_model_name")[F.size("cpe_model_name") -1])\
+                                .withColumn("cpe_model_name", 
+                                            when(col("cpe_model_name").isin(cpe_models_to_keep), col("cpe_model_name")) 
+                                                .otherwise("Others"))\
+                            .select(*cust_columns)\
                             .dropDuplicates()
+                #.select("cust_id","imei","imsi","mdn_5g","pplan_cd","pplan_desc","cpe_model_name")
+                # after filter TECH_GEN == "5G", 1757944/3148538 left
 
-        df_id = df_cust.select(*cust_columns)\
-                    .union( df_tracfone.select(*cust_columns) )
+                for col_name in df_cust.columns: 
+                    df_cust = df_cust.withColumnRenamed(col_name, col_name.lower()) 
 
-        # 2. cpe_daily_data_usage --------- --------- --------- --------- --------- --------- --------- ---------
-        
-        p = hdfs_pd + "/usr/apps/vmas/cpe_daily_data_usage/" + d
-        df_datausage = spark.read.option("header","true").csv(p)\
-                            .select("cust_id","imei","imsi","mdn_5g","fourg_total_mb","fiveg_total_mb","fiveg_usage_percentage")\
-                            .dropDuplicates()
-        df_datausage = convert_string_numerical(df_datausage,["fourg_total_mb","fiveg_total_mb","fiveg_usage_percentage"])\
-                                    .withColumn("data_usage", col("fourg_total_mb")+col("fiveg_total_mb") )\
-                                    .withColumn("sqrt_data_usage", F.sqrt( col("fourg_total_mb")+col("fiveg_total_mb") ) )
-        df_5g = df_id.join(df_datausage.drop("cust_id","imei"),["imsi","mdn_5g"], "left" )
-        
-        # 3. speed_test --------- --------- --------- --------- --------- --------- --------- ---------
-        
-        df_postgre = spark.read.parquet( hdfs_pd + "/user/ZheS//5g_homeScore/speed_test/" + d)\
-                            .select(F.col("mdn").alias("mdn_5g"),"imei",
-                                    F.round(col("downloadresult"), 0).alias("downloadresult"),
-                                    F.round(col("uploadresult"), 0).alias("uploadresult"),
-                                    F.round(col("latency"), 0).alias("latency"),
-                                    "status","progress")\
-                            .filter( col("progress") == 100)\
-                            .dropDuplicates()
-        
-        df_5g = df_5g.join(df_postgre.drop("imei","status","progress"),"mdn_5g", "left" )
+                # 1.2. tracfone --------- --------- --------- --------- --------- --------- --------- --------- ---------
+                df_tracfone = spark.read.option("header","true").csv( hdfs_pa + "/user/kovvuve/tracfone/tracfone_v3.csv")\
+                                    .withColumnRenamed("DEVICE_ID","imei")\
+                                    .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
+                                    .withColumnRenamed("IMSI_VZ","imsi")\
+                                    .withColumnRenamed("MDN","mdn_5g")\
+                                    .withColumn("cust_id", F.lit("tracfone"))\
+                                    .withColumn("cpe_model_name", F.lit("tracfone"))\
+                                    .withColumn("PPLAN_DESC", F.lit("tracfone"))\
+                                    .withColumn("pplan_cd", F.lit("tracfone"))\
+                                    .dropDuplicates()
 
-        # 4.1. crsp_result
-        path_5g4g = hdfs_pa + f"/user/derek/hb/result/dt={d}/result.csv.gz"
-        df_5g4g = spark.read.option("header", "true").csv(path_5g4g)
-        df_crsp = spark.read.parquet( hdfs_pd + "/user/ZheS/5g_homeScore/crsp_result/" + d )\
-                        .select("imei","imsi", 
-                                "ServicetimePercentage",
-                                "switch_count_sum",
-                                "percentageReceived",
-                                F.round("avg_CQI",2).alias("avg_CQI"),
-                                F.round("avg_MemoryPercentFree",2).alias("avg_MemoryPercentFree"),
-                                F.round("log_avg_BRSRP",2).alias("log_avg_BRSRP"),
-                                F.round("log_avg_4GRSRP",2).alias("log_avg_4GRSRP"),
-                                F.round("log_avg_SNR",2).alias("log_avg_SNR"),
-                                F.round("log_avg_5GSNR",2).alias("log_avg_5GSNR"),
-                                F.round("LTERACHFailurePercentage",2).alias("LTERACHFailurePercentage"),
-                                F.round("LTEHandOverFailurePercentage",2).alias("LTEHandOverFailurePercentage"),
-                                F.round("NRSCGChangeFailurePercentage",2).alias("NRSCGChangeFailurePercentage"),
-                                )\
-                        .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
-                        .join( df_5g4g.select("imsi",
-                                              col("hb_total").cast('double'),
-                                              col("hb_5g").cast('double'),
-                                              col("percentage").cast('double').alias("5g_uptime")), 
-                              ["imsi"] )\
-                        .dropDuplicates()
-        # 4.2. oma_result
-        df_oma = spark.read.parquet(hdfs_pd + "/user/ZheS/5g_homeScore/oma_result/"+d)
-        crsp_columns = [col for col in df_crsp.columns if col not in df_oma.columns] 
-        for col_name in crsp_columns: 
-            df_oma = df_oma.withColumn(col_name, lit(None)) 
-        union_df = df_crsp.union(df_oma.select(df_crsp.columns)).dropDuplicates()
+                df_id = df_cust.select(*cust_columns)\
+                            .union( df_tracfone.select(*cust_columns) )
 
-        df_5g = df_5g.join(union_df,["imei", "imsi"] ).dropDuplicates()
+                # 2. cpe_daily_data_usage --------- --------- --------- --------- --------- --------- --------- ---------
+                
+                p = hdfs_pd + "/usr/apps/vmas/cpe_daily_data_usage/" + d
+                df_datausage = spark.read.option("header","true").csv(p)\
+                                    .select("cust_id","imei","imsi","mdn_5g","fourg_total_mb","fiveg_total_mb","fiveg_usage_percentage")\
+                                    .dropDuplicates()
+                df_datausage = convert_string_numerical(df_datausage,["fourg_total_mb","fiveg_total_mb","fiveg_usage_percentage"])\
+                                            .withColumn("data_usage", col("fourg_total_mb")+col("fiveg_total_mb") )\
+                                            .withColumn("sqrt_data_usage", F.sqrt( col("fourg_total_mb")+col("fiveg_total_mb") ) )
+                df_5g = df_id.join(df_datausage.drop("cust_id","imei"),["imsi","mdn_5g"], "left" )
+                
+                # 3. speed_test --------- --------- --------- --------- --------- --------- --------- ---------
+                
+                df_postgre = spark.read.parquet( hdfs_pd + "/user/ZheS//5g_homeScore/speed_test/" + d)\
+                                    .select(F.col("mdn").alias("mdn_5g"),"imei",
+                                            F.round(col("downloadresult"), 0).alias("downloadresult"),
+                                            F.round(col("uploadresult"), 0).alias("uploadresult"),
+                                            F.round(col("latency"), 0).alias("latency"),
+                                            "status","progress")\
+                                    .filter( col("progress") == 100)\
+                                    .dropDuplicates()
+                
+                df_5g = df_5g.join(df_postgre.drop("imei","status","progress"),"mdn_5g", "left" )
 
-        # 5. reset table
-        df_reset = spark.read.option("header", "true").csv( hdfs_pa + f"/fwa_agg/fwa_reset_raw/date={d}" )\
-                        .groupby("sn")\
-                        .agg( count("*").alias("reset_count") )
+                # 4.1. crsp_result       
+                path_5g4g = hdfs_pa + f"/user/derek/hb/result/dt={d}/result.csv.gz"
+                df_5g4g = spark.read.option("header", "true").csv(path_5g4g)
+                
+                df_crsp = spark.read.parquet( hdfs_pd + "/user/ZheS/5g_homeScore/crsp_result/" + d )\
+                                .select("imei","imsi", 
+                                        "ServicetimePercentage",
+                                        "switch_count_sum",
+                                        "percentageReceived",
+                                        F.round("avg_CQI",2).alias("avg_CQI"),
+                                        F.round("avg_MemoryPercentFree",2).alias("avg_MemoryPercentFree"),
+                                        F.round("log_avg_BRSRP",2).alias("log_avg_BRSRP"),
+                                        F.round("log_avg_4GRSRP",2).alias("log_avg_4GRSRP"),
+                                        F.round("log_avg_SNR",2).alias("log_avg_SNR"),
+                                        F.round("log_avg_5GSNR",2).alias("log_avg_5GSNR"),
+                                        F.round("LTERACHFailurePercentage",2).alias("LTERACHFailurePercentage"),
+                                        F.round("LTEHandOverFailurePercentage",2).alias("LTEHandOverFailurePercentage"),
+                                        F.round("NRSCGChangeFailurePercentage",2).alias("NRSCGChangeFailurePercentage"),
+                                        )\
+                                .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
+                                .join( df_5g4g.select("imsi",
+                                                    col("hb_total").cast('double'),
+                                                    col("hb_5g").cast('double'),
+                                                    (col("percentage").cast('double')*100 ).alias("5g_uptime")), 
+                                    ["imsi"] )\
+                                .dropDuplicates()
+                # 4.2. oma_result
+                df_oma = spark.read.parquet(hdfs_pd + "/user/ZheS/5g_homeScore/oma_result/"+d)
+                crsp_columns = [col for col in df_crsp.columns if col not in df_oma.columns] 
+                for col_name in crsp_columns: 
+                    df_oma = df_oma.withColumn(col_name, lit(None)) 
+                union_df = df_crsp.union(df_oma.select(df_crsp.columns)).dropDuplicates()
 
-        p = f"/usr/apps/vmas/5g_data/fixed_5g_router_mac_sn_mapping/{d}/fixed_5g_router_mac_sn_mapping.csv"
-        df_map = spark.read.option("header", "true").csv(hdfs_pd + p)\
-                        .select("imei", col("serialnumber").alias("sn") )\
-                        .dropDuplicates()
+                df_5g = df_5g.join(union_df,["imei", "imsi"] ).dropDuplicates()
 
-        df_5g = df_5g.join( df_map, ["imei"], "left")\
-                    .join( df_reset, "sn", "left" )
-        # -------------------------------------------------------------------------------------
-        df_5g.write.mode("overwrite")\
-            .parquet( hdfs_pd + "/user/ZheS//5g_homeScore/join_df/" + d )
-        
-    except Exception as e:
-        print(e)
-        mail_sender.send( send_from ="5gHomeScoreJoinAll@verizon.com", 
-                            subject = f"5gHomeScoreJoinAll failed !!! at {d}", 
-                            text = e)
+                fiveg_pplan = ['51219', '27976', '53617', '50044', '50055', '50127', '50128', '67571', '67567', '50129', '67576', '67568', '50116', '50117', '50130', '39425', '39428']
+                fourg_pplan = ['48390', '48423', '48445', '46799', '46798', '50010', '50011', '67577', '38365','67584', '65655', '65656']
+                rsrp_conditions = [ (col("PPLAN_CD").isin(fiveg_pplan), col("log_avg_BRSRP")), 
+                                    (col("PPLAN_CD").isin(fourg_pplan), col("log_avg_4GRSRP")) ]
+                snr_conditions = [ (col("PPLAN_CD").isin(fiveg_pplan), col("log_avg_5GSNR")), 
+                                    (col("PPLAN_CD").isin(fourg_pplan), col("log_avg_SNR")) ]
+                
+                df_5g = df_5g.withColumn("RSRP",  
+                                            when(rsrp_conditions[0][0], rsrp_conditions[0][1]) 
+                                            .when(rsrp_conditions[1][0], rsrp_conditions[1][1]) 
+                                            .otherwise( col("log_avg_4GRSRP")/2 + col("log_avg_BRSRP")/2  ) 
+                                            )\
+                                .withColumn("SNR",  
+                                            when(snr_conditions[0][0], snr_conditions[0][1]) 
+                                            .when(snr_conditions[1][0], snr_conditions[1][1]) 
+                                            .otherwise( (col("log_avg_SNR")+col("log_avg_5GSNR"))/2 ) 
+                                            )
+
+                # 5. reset table
+                df_reset = spark.read.option("header", "true").csv( hdfs_pa + f"/fwa_agg/fwa_reset_raw/date={d}" )\
+                                .groupby("sn")\
+                                .agg( count("*").alias("reset_count") )
+
+                p = f"/usr/apps/vmas/5g_data/fixed_5g_router_mac_sn_mapping/{d}/fixed_5g_router_mac_sn_mapping.csv"
+                df_map = spark.read.option("header", "true").csv(hdfs_pd + p)\
+                                .select("imei", col("serialnumber").alias("sn") )\
+                                .dropDuplicates()
+
+                df_5g = df_5g.join( df_map, ["imei"], "left")\
+                            .join( df_reset, "sn", "left" )\
+                            .fillna({"reset_count":0})
+                # -------------------------------------------------------------------------------------
+                df_5g.write.mode("overwrite")\
+                    .parquet( hdfs_pd + "/user/ZheS//5g_homeScore/join_df/" + d )
 
 
-    
+            except Exception as e:
+                print(e)
+                mail_sender.send( send_from ="5gHomeScoreJoinAll@verizon.com", 
+                                    subject = f"5gHomeScoreJoinAll failed !!! at {d}", 
+                                    text = e)
 
 
 
