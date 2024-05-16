@@ -81,6 +81,7 @@ def featureToScore(homeScore_df, historical_dist, feature, reverse=False, partit
         (col(feature) - col(f"{feature}_median")) * scale_factor_above + middle_threshold 
     ) 
     if not reverse: 
+
         df_scaled = df_with_percentiles.withColumn(f"scaled_{feature}", F.round(scaled_result, 2)) 
     else: 
         df_scaled = df_with_percentiles.withColumn(f"scaled_{feature}", F.lit(100.0) - F.round(scaled_result, 2)) 
@@ -294,10 +295,11 @@ if __name__ == "__main__":
                 df_score = featureToScore(df_score,historical_dist, feature, reverse=True, partitionColumn=["cpe_model_name","PPLAN_CD"]) 
 
             for feature in scaled_features_manual: 
+                #df_score = featureToScore(df_score, feature, partitionColumn = ["cpe_model_name","PPLAN_CD"] ) 
                 df_score = featureToScoreManual(df_score, feature, threshold_dict[feature]) 
 
-            #for feature in shift_features_reverse: 
-            #    df_score = featureToScoreShfit(df_score, feature, reverse=True) 
+            for feature in shift_features_reverse: 
+                df_score = featureToScoreShfit(df_score, feature, reverse=True) 
             for feature in shift_features: 
                 df_score = featureToScoreShfit(df_score, feature) 
 
