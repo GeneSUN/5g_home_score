@@ -52,8 +52,8 @@ class Join5gTables:
         self.reset_path = hdfs_pa + f"/fwa_agg/fwa_reset_raw/date={self.d}"
         self.map_path = hdfs_pd + f"/usr/apps/vmas/5g_data/fixed_5g_router_mac_sn_mapping/{self.d}/fixed_5g_router_mac_sn_mapping.csv"
 
-        self.cpe_models_to_keep = ["ARC-XCI55AX", "ASK-NCQ1338FA", "WNC-CR200A", "ASK-NCQ1338", "FSNO21VA", "NCQ1338E",'Others'] 
-        self.cust_columns = ["cust_id","imei","imsi","mdn_5g","cpe_model_name","PPLAN_DESC","PPLAN_CD"]
+        self.cpe_models_to_keep = ["ARC-XCI55AX", "ASK-NCQ1338FA", "WNC-CR200A", "ASK-NCQ1338", "FSNO21VA", "NCQ1338E","ASK-NCM1100E","ASK-NCM1100",'Others'] 
+        self.cust_columns = ["cust_id","imei","imsi","mdn_5g","cpe_model_name","PPLAN_DESC","PPLAN_CD","ecpd_profile_id"]
         self.fiveg_pplan = ['51219', '27976', '53617', '50044', '50055', '50127', '50128', '67571', '67567', '50129', '67576', '67568', '50116', '50117', '50130', '39425', '39428']
         self.fourg_pplan = ['48390', '48423', '48445', '46799', '46798', '50010', '50011', '67577', '38365','67584', '65655', '65656']
 
@@ -102,6 +102,7 @@ class Join5gTables:
                                 .withColumnRenamed("IMSI_VZ","imsi")\
                                 .withColumnRenamed("MDN","mdn_5g")\
                                 .withColumn("cust_id", F.lit("tracfone"))\
+                                .withColumn("ecpd_profile_id", F.lit("tracfone"))\
                                 .withColumn("cpe_model_name", F.lit("tracfone"))\
                                 .withColumn("PPLAN_DESC", F.lit("tracfone"))\
                                 .withColumn("pplan_cd", F.lit("tracfone"))\
@@ -114,7 +115,7 @@ class Join5gTables:
         except Exception as e:
             print(e)
             mail_sender.send( send_from ="5gHomeScoreJoinAll@verizon.com", 
-                                subject = f"5gHomeScoreJoinAll failed !!! at {d}", 
+                                subject = f"5gHomeScoreJoinAll failed !!! at df_cust {self.d}", 
                                 text = e)
     
     def get_datausage_df(self, cpe_daily_data_usage_path=None):
@@ -244,11 +245,15 @@ if __name__ == "__main__":
     parser.add_argument("--date", default=(date.today() - timedelta(1) ).strftime("%Y-%m-%d")) 
     args_date = parser.parse_args().date
     date_list = [( datetime.strptime( args_date, "%Y-%m-%d" )  - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(backfill_range)][::-1]
-
+    print(date_list)
     for date_str in date_list: 
         try:    
             spark.read.parquet(hdfs_pd + "/user/ZheS/5g_homeScore/join_df/"+ date_str)
-        except FileNotFoundError:
-            df_5gHome = Join5gTables(d = date_str).df_5gHome
-            df_5gHome.write.mode("overwrite")\
-                    .parquet( hdfs_pd + "/user/ZheS//5g_homeScore/join_df/" + date_str )
+        except Exception as e:
+            print(e)
+            try:
+                df_5gHome = Join5gTables(d = date_str).df_5gHome
+                df_5gHome.write.mode("overwrite")\
+                        .parquet( hdfs_pd + "/user/ZheS//5g_homeScore/join_df/" + date_str )
+            except:
+                print(e, "this round failed")
