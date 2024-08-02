@@ -162,7 +162,7 @@ if __name__ == "__main__":
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
 
-    cpe_models_to_keep =  ["ARC-XCI55AX", "ASK-NCQ1338FA", "WNC-CR200A", "ASK-NCQ1338", "FSNO21VA", "NCQ1338E",'Others'] 
+    cpe_models_to_keep =  ["ARC-XCI55AX", "ASK-NCQ1338FA", "WNC-CR200A", "ASK-NCQ1338", "FSNO21VA", "NCQ1338E","ASK-NCM1100E","ASK-NCM1100",'Others'] 
         
     features = ['imei', 'imsi', 'mdn_5g', 'cust_id', 'cpe_model_name', 'fiveg_usage_percentage', 'downloadresult', 'sn', 'ServicetimePercentage', 'switch_count_sum', 'avg_CQI', 'avg_MemoryPercentFree', 'log_avg_BRSRP', 'log_avg_SNR', 'log_avg_5GSNR', 'LTERACHFailurePercentage', 'LTEHandOverFailurePercentage', 'NRSCGChangeFailurePercentage']
     key_features = ['imei', 'imsi', 'mdn_5g', 'cust_id','sn', 'cpe_model_name']
@@ -268,16 +268,21 @@ if __name__ == "__main__":
         
     day_before = 1
     args_date = date.today() - timedelta(day_before)
-    date_list = [(  args_date - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(2)][::-1]
+    
+    backfill_days = 7
+    backfill_date_list = [(  args_date - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(backfill_days)][::-1]
+    
+    historical_days = 1 # how many days of feature distribution is used for statistical score.
+    historical_date_list = [(  args_date - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(historical_days)][::-1]
 
-    for d in date_list: 
+    for d in backfill_date_list: 
         try: 
             df_score = spark.read.parquet(hdfs_pd + "/user/ZheS/5g_homeScore/final_score/"+d)
 
         except Exception as e: 
 
             file_path_pattern = hdfs_pd + "/user/ZheS/5g_homeScore/join_df/{}"  
-            historical_dist = process_csv_files_for_date_range(date_list, file_path_pattern)
+            historical_dist = process_csv_files_for_date_range(historical_date_list, file_path_pattern)
             historical_dist.cache();print( historical_dist.count() )
 
             df_score = spark.read.parquet(hdfs_pd + "/user/ZheS/5g_homeScore/join_df/"+d)\
