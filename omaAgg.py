@@ -7,8 +7,12 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 import numpy as np
 import sys 
-
+import argparse 
 from pyspark.sql.functions import from_unixtime 
+import sys 
+sys.path.append('/usr/apps/vmas/scripts/ZS') 
+from MailSender import MailSender
+
 @udf(returnType=FloatType())
 def get_BRSRP_Avg(values):
 
@@ -108,35 +112,54 @@ if __name__ == "__main__":
     spark = SparkSession.builder\
             .appName('5gHome_oma')\
             .config("spark.sql.adapative.enabled","true")\
+            .config("spark.ui.port","24040")\
             .enableHiveSupport().getOrCreate()
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
-    #for i in range(15):
-    day_before = 1
-    d = ( date.today() - timedelta(day_before) ).strftime("%Y-%m-%d")
+    mail_sender = MailSender()
 
-    df_crsp_id = spark.read.option("header","true").csv( hdfs_pa + f"/user/kovvuve/owl_history_v3/date={d}" )\
-                    .dropDuplicates()\
-                    .select(
-                            col("IMEI").alias("imei"), 
-                            col("IMSI").alias("imsi")
-                            )\
-                    .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
-                    .groupby("imei","imsi").count()
+    backfill_range = 7
+    parser = argparse.ArgumentParser(description="Inputs") 
+    parser.add_argument("--date", default=(date.today() - timedelta(1) ).strftime("%Y-%m-%d")) 
+    args_date = parser.parse_args().date
+    date_list = [( datetime.strptime( args_date, "%Y-%m-%d" )  - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(backfill_range)][::-1]
 
-    base_path = hdfs_pa + f"/user/heartbeat7min/parsed/dt={d}"  
-    oma_features = [ "imei","imsi","currentnetwork","brsrp","snr","cpe_5gsnr","time","timestamp"]
-    groupby_ids = ["imei","imsi"] #groupby_ids = ["imei","imsi","mdn","modelname"]
+    for date_str in date_list: 
+        try:    
+            spark.read.parquet(hdfs_pd + "/user/ZheS/5g_homeScore/oma_result/"+ date_str)
+        except Exception as e:
+            print(e)
+            try:
+                            
+                d = date_str
+                df_crsp_id = spark.read.option("header","true").csv( hdfs_pa + f"/user/kovvuve/owl_history_v3/date={d}" )\
+                                .dropDuplicates()\
+                                .select(
+                                        col("IMEI").alias("imei"), 
+                                        col("IMSI").alias("imsi")
+                                        )\
+                                .withColumn("imei", F.expr("substring(imei, 1, length(imei)-1)"))\
+                                .groupby("imei","imsi").count()
 
-    df_oma = spark.read.option("recursiveFileLookup", "true").json(base_path)
-    df_oma = df_oma.join( df_crsp_id, groupby_ids, "left_anti" )\
-                    .select(oma_features)
+                base_path = hdfs_pa + f"/user/heartbeat7min/parsed/dt={d}"  
+                oma_features = [ "imei","imsi","currentnetwork","brsrp","snr","cpe_5gsnr","time","timestamp"]
+                groupby_ids = ["imei","imsi"] #groupby_ids = ["imei","imsi","mdn","modelname"]
 
-    ins1 = heartbeat( spark_session = spark, 
-                        df_heartbeat = df_oma,
-                        groupby_ids = groupby_ids)
+                df_oma = spark.read.option("recursiveFileLookup", "true").json(base_path)
+                df_oma = df_oma.join( df_crsp_id, groupby_ids, "left_anti" )\
+                                .select(oma_features)
 
-    ins1.df_result.repartition(10)\
-                .write.mode("overwrite")\
-                .parquet( hdfs_pd + "/user/ZheS/5g_homeScore/oma_result/" + d )
-                #
+                ins1 = heartbeat( spark_session = spark, 
+                                    df_heartbeat = df_oma,
+                                    groupby_ids = groupby_ids)
+
+                ins1.df_result.repartition(10)\
+                            .write.mode("overwrite")\
+                            .parquet( hdfs_pd + "/user/ZheS/5g_homeScore/oma_result/" + d )
+                            #
+
+            except Exception as e:
+                print(e)
+                mail_sender.send( send_from ="oma_result@verizon.com", 
+                                    subject = f"oma_result failed !!! at {date_str}", 
+                                    text = e)
