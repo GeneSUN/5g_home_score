@@ -158,6 +158,7 @@ if __name__ == "__main__":
     spark = SparkSession.builder\
             .appName('5gHome_featureToScore')\
             .config("spark.sql.adapative.enabled","true")\
+            .config("spark.ui.port","24040")\
             .enableHiveSupport().getOrCreate()
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
@@ -359,6 +360,14 @@ if __name__ == "__main__":
                                     "scaled_avg_MemoryPercentFree":0.3
                                     }
             
+            averageScore_weights = {
+                                    "dataScore": 0.2, 
+                                    "networkSpeedScore":0.2,
+                                    "networkSignalScore":0.2,
+                                    "networkFailureScore":0.2,
+                                    "deviceScore":0.2
+                                    }
+                        
             score_calculator_networkSpeed = ScoreCalculator(networkSpeedScore_weights) 
             networkSpeed_score_udf = udf(score_calculator_networkSpeed.calculate_score, FloatType()) 
 
@@ -374,13 +383,16 @@ if __name__ == "__main__":
             score_calculator_device = ScoreCalculator(deviceScore_weights) 
             device_score_udf = udf(score_calculator_device.calculate_score, FloatType()) 
 
+            score_calculator_average =ScoreCalculator(averageScore_weights) 
+            average_score_udf = udf(score_calculator_average.calculate_score, FloatType()) 
 
             df_score = df_score.withColumn("dataScore", F.round( data_score_udf(*[col(c) for c in list( dataScore_weights.keys() ) ] ),2) )\
                                 .withColumn("networkSpeedScore", F.round( networkSpeed_score_udf(*[col(c) for c in list( networkSpeedScore_weights.keys() ) ] ),2) )\
                                 .withColumn("networkSignalScore", F.round( networkSignal_score_udf(*[col(c) for c in list( networkSignalScore_weights.keys() ) ] ),2) )\
                                 .withColumn("networkFailureScore", F.round( networkFailure_score_udf(*[col(c) for c in list( networkFailureScore_weights.keys() ) ] ),2) )\
-                                .withColumn("deviceScore", F.round( device_score_udf(*[col(c) for c in list( deviceScore_weights.keys() ) ] ),2) )
- 
+                                .withColumn("deviceScore", F.round( device_score_udf(*[col(c) for c in list( deviceScore_weights.keys() ) ] ),2) )\
+                                .withColumn("finalScore", F.round( average_score_udf(*[col(c) for c in list( averageScore_weights.keys() ) ] ),2) )
+    
             df_score.dropDuplicates()\
                     .repartition(10)\
                     .write.mode("overwrite")\
