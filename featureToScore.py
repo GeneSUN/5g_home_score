@@ -333,13 +333,9 @@ if __name__ == "__main__":
                                     "scaled_latency": 0.3 
                                 } 
             networkSignalScore_weights = { 
-                                    #"scaled_log_avg_4GRSRP": 0.2, 
-                                    #"scaled_log_avg_BRSRP": 0.2, 
                                     "scaled_RSRP": 0.35, 
                                     "scaled_avg_CQI": 0.3, 
                                     "scaled_SNR": 0.35, 
-                                    #"scaled_log_avg_SNR": 0.2, 
-                                    #"scaled_log_avg_5GSNR": 0.2, 
                                 }  
             networkFailureScore_weights = { 
                                     "scaled_LTERACHFailurePercentage": 0.5, 
