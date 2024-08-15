@@ -158,8 +158,9 @@ if __name__ == "__main__":
     spark = SparkSession.builder\
             .appName('5gHome_featureToScore')\
             .config("spark.sql.adapative.enabled","true")\
-            .config("spark.ui.port","24040")\
+            .config("spark.ui.port","24041")\
             .enableHiveSupport().getOrCreate()
+    
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
 
@@ -273,7 +274,7 @@ if __name__ == "__main__":
     backfill_days = 7
     backfill_date_list = [(  args_date - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(backfill_days)][::-1]
     
-    historical_days = 1 # how many days of feature distribution is used for statistical score.
+    historical_days = 5 # how many days of feature distribution is used for statistical score.
     historical_date_list = [(  args_date - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(historical_days)][::-1]
 
     for d in backfill_date_list: 
@@ -350,10 +351,10 @@ if __name__ == "__main__":
                                 } 
             
             deviceScore_weights = {
-                                    "scaled_switch_count_sum": 0.3, 
-                                    "scaled_percentageReceived":0.3,
-                                    "scaled_reset_count":0.1,
-                                    "scaled_avg_MemoryPercentFree":0.3
+                                    "scaled_switch_count_sum": 0.4, 
+                                    "scaled_percentageReceived":0.1,
+                                    "scaled_reset_count":0.4,
+                                    "scaled_avg_MemoryPercentFree":0.1
                                     }
             
             averageScore_weights = {
