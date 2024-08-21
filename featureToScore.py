@@ -425,10 +425,10 @@ if __name__ == "__main__":
                 }, 
 
                 "deviceScore_weights": { 
-                    "scaled_switch_count_sum": 0.25,  
-                    "scaled_percentageReceived":0.25, 
-                    "scaled_reset_count":0.25, 
-                    "scaled_avg_MemoryPercentFree":0.25 
+                    "scaled_switch_count_sum": 0.4, 
+                    "scaled_percentageReceived":0.1,
+                    "scaled_reset_count":0.4,
+                    "scaled_avg_MemoryPercentFree":0.1
                 } 
 
             } 
