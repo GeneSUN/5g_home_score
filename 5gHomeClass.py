@@ -165,36 +165,45 @@ class heartbeat():
         if df_heartbeat is None:
             df_heartbeat = self.df_heartbeat
 
-        df_heartbeat = df_heartbeat.filter( col("BRSRP")> -155.0 )\
-                                    .filter( col("BRSRP")< -20 )\
+        five_g_freq_condition = (
+            col("5GEARFCN_DL").cast("numeric").between(2070833, 2084999) |
+            col("5GEARFCN_DL").cast("numeric").between(2229167, 2279166) |
+            col("5GEARFCN_DL").cast("numeric").between(386000, 398000) |
+            col("5GEARFCN_DL").cast("numeric").between(173800, 178800) |
+            col("5GEARFCN_DL").cast("numeric").between(743333, 795000) |
+            col("5GEARFCN_DL").cast("numeric").between(422000, 440000) |
+            col("5GEARFCN_DL").cast("numeric").between(620000, 680000)
+        )
+        four_g_freq_condition = ~five_g_freq_condition
+
+        df_heartbeat = df_heartbeat.filter(     ((col("BRSRP") > -155) & (col("BRSRP") < -20)) | (col("BRSRP") == 0) )\
                                     .filter( col("SNR")< 55.0 )\
                                     .filter( col("CQI")< 15.0 )\
-                                    .filter( col("5GSNR")!= 0 )\
+                                    .filter( col("5GSNR")> -23 )\
+                                    .filter( col("5GSNR")< 40 )\
                                     .filter(F.col("MemoryPercentFree").isNotNull() & ~F.isnan("MemoryPercentFree"))\
-                                    .withColumn( 
-                                                "5GSNR", 
-                                                when( 
-                                                    ~(col("5GEARFCN_DL").between(2070833, 2084999)) & 
-                                                    ~(col("5GEARFCN_DL").between(2229167, 2279166)) & 
-                                                    ~(col("5GEARFCN_DL").between(386000, 398000)) & 
-                                                    ~(col("5GEARFCN_DL").between(173800, 178800)) & 
-                                                    ~(col("5GEARFCN_DL").between(743333, 795000)) & 
-                                                    ~(col("5GEARFCN_DL").between(422000, 440000)) & 
-                                                    ~(col("5GEARFCN_DL").between(620000, 680000)), 
-                                                    None 
-                                                ).otherwise(col("5GSNR")) 
-                                            )
+                                    .withColumn("4G_SNR",when(four_g_freq_condition, col("SNR")).otherwise(None) )\
+                                    .withColumn("5G_SNR",when(five_g_freq_condition, col("5GSNR")).otherwise(None) )\
+                                    .withColumn("4G_RSRP",when(four_g_freq_condition, col("4GRSRP")).otherwise(None) )\
+                                    .withColumn("5G_RSRP",when(five_g_freq_condition, col("BRSRP")).otherwise(None) )
         # Apply the UDF to the DataFrame 
         df_result = df_heartbeat.groupby("sn")\
                                 .agg( 
-                                    F.collect_list("4GRSRP").alias("4GRSRP_list"),
-                                    F.collect_list("BRSRP").alias("BRSRP_list"),
-                                    F.collect_list("SNR").alias("SNR_list"),
-                                    F.collect_list("5GSNR").alias("5GSNR_list"),
+                                    F.collect_list("4G_RSRP").alias("4GRSRP_list"),
+                                    F.collect_list("5G_RSRP").alias("BRSRP_list"),
+                                    F.collect_list("4G_SNR").alias("SNR_list"),
+                                    F.collect_list("5G_SNR").alias("5GSNR_list"),
+
+                                    count("5GEARFCN_DL").alias("total_count"),
+                                    F.sum(when(five_g_freq_condition, 1).otherwise(0)).alias("five_g_count"),
+                                    F.sum(when(four_g_freq_condition, 1).otherwise(0)).alias("four_g_count"),
+
                                     avg("CQI").alias("avg_CQI"),
                                     avg("MemoryPercentFree").alias("avg_MemoryPercentFree"),
                                     count("*").alias("count_received")
                                     )\
+                                .withColumn("five_g_percentage", F.round( (col("five_g_count") / col("total_count")) * 100, 2 ))\
+                                .withColumn("four_g_percentage", F.round( (col("four_g_count") / col("total_count")) * 100, 2 ) )\
                                 .withColumn("log_avg_BRSRP", get_BRSRP_Avg(F.col("BRSRP_list")))\
                                 .withColumn("log_avg_4GRSRP", get_BRSRP_Avg(F.col("4GRSRP_list")))\
                                 .withColumn("log_avg_5GSNR", get_BRSRP_Avg(F.col("5GSNR_list")))\
@@ -210,7 +219,7 @@ if __name__ == "__main__":
     spark = SparkSession.builder\
             .appName('5gHome_crsp')\
             .config("spark.sql.adapative.enabled","true")\
-            .config("spark.ui.port","24040")\
+            .config("spark.ui.port","24042")\
             .enableHiveSupport().getOrCreate()
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
