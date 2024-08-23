@@ -61,14 +61,14 @@ class Join5gTables:
         self.datausage_df = try_except_wrapper(self.get_datausage_df) 
         self.speedtest_df = try_except_wrapper(self.get_speedtest_df) 
         self.heartbeat_df = try_except_wrapper(self.get_heartbeat_df) 
-        self.all_df = try_except_wrapper(self.get_reset_df) 
+        self.df_5gHome = try_except_wrapper(self.get_reset_df) 
 
         #self.custline_df = self.get_custline_df()
         #self.datausage_df = self.get_datausage_df()
         #self.speedtest_df = self.get_speedtest_df()
         #self.heartbeat_df = self.get_heartbeat_df()
         #self.all_df = self.get_reset_df()
-        self.df_5gHome = self.apply_plan_conditions( df = self.all_df )
+        #self.df_5gHome = self.apply_plan_conditions( df = self.df_5gHome )
 
     def get_custline_df(self, custline_path=None, cpe_models_to_keep=None, cust_columns=None, tracfone_path=None):
         if custline_path is None:
@@ -198,7 +198,8 @@ class Join5gTables:
 
         df_map = spark.read.option("header", "true").csv( map_path )\
                         .select("imei", col("serialnumber").alias("sn") )\
-                        .dropDuplicates()
+                        .dropDuplicates()\
+                        .filter( col("sn").isNotNull() )
 
         all_df = self.heartbeat_df.join( df_map, ["imei"], "left")\
                                 .join( df_reset, "sn", "left" )\
@@ -235,6 +236,7 @@ if __name__ == "__main__":
     spark = SparkSession.builder\
             .appName('5g_home_join_all_zhes')\
             .config("spark.sql.adapative.enabled","true")\
+            .config("spark.ui.port","24040")\
             .getOrCreate()
 
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
