@@ -221,7 +221,7 @@ def get_druid_missing(druid_hdfs_location, payload, miss_date_payload):
     #for daily_task in payload.keys():
     for daily_task in druid_hdfs_location.keys():
         try:
-            if daily_task == "cpe_final_score_v2":
+            if daily_task == "cpe_final_score_v3":
                 druid_dict[daily_task] = ClassDailyCheckDruid( 
                                 init_payload = payload[daily_task], 
                                 miss_payload = miss_date_payload[daily_task],
@@ -266,7 +266,7 @@ if __name__ == "__main__":
                     "map":1,
                     "join_df":1,
                     "final_score":1,
-                    "cpe_final_score_v2":1
+                    "cpe_final_score_v3":1
                     }
     time_range = time_window = 10
 
@@ -335,7 +335,7 @@ if __name__ == "__main__":
     df_hdfs = get_hdfs_missing(hdfs_location)
 
     druid_hdfs_location = { 
-                "cpe_final_score_v2": {
+                "cpe_final_score_v3": {
                     "hdfs_host": 'njbbvmaspd11.nss.vzwnet.com', 
                     "hdfs_port": "9870", 
                     "hdfs_folder_path": '/user/ZheS/5g_homeScore/final_score/', 
@@ -373,7 +373,7 @@ if __name__ == "__main__":
     
     send_mail(  'sassupport@verizon.com', 
             ['zhe.sun@verizonwireless.com',], 
-            f"Daily SNA data availability checking Q{(datetime.now().month - 1)//3 +1} {datetime.now().year}",
+            f"cpe_final_score_v3 availability checking",
             [], 
             df_list, 
             files=None, 
