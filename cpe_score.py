@@ -48,6 +48,7 @@ class CellularScore:
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
     count_features = ["LTERACHFailureCount", "LTEHandOverFailureCount", "NRSCGChangeFailureCount","RRCConnectFailureCount"]
+    
     def __init__(self,d): 
         self.d = d
         self.df_heartbeat = spark.read.option("header","true").csv( hdfs_pa + f"/user/kovvuve/owl_history_v3/date={self.d}" )\
@@ -128,7 +129,7 @@ class CellularScore:
 
         # Continue with df_ultra as normal
         df_ultrag_price_cap = df_ultra.join(df_cust.select("IMSI", "MDN_5G", "PPLAN_CD", "PPLAN_DESC", "CPE_MODEL_NAME"), "IMSI", "right")\
-            .join(df_price_cap, on="PPLAN_CD")\
+            .join(df_price_cap, "PPLAN_CD", "right")\
             .filter(F.col("UE_OVERALL_DL_SPEED").isNotNull())\
             .filter(F.col("UE_OVERALL_DL_SPEED") != 0)\
             .withColumn(
@@ -198,7 +199,7 @@ class CellularScore:
             df_price_cap = self.df_price_cap
 
         df_heartbeat = df_heartbeat.join(df_cust.select("IMSI", "MDN_5G", "PPLAN_CD", "PPLAN_DESC", "CPE_MODEL_NAME"), "IMSI", "right")\
-                                    .join(df_price_cap, on="PPLAN_CD")\
+                                    .join(df_price_cap, "PPLAN_CD", "right")\
 
         df_with_bandwidths = df_heartbeat.withColumnRenamed("SNR", "_4gsnr").withColumnRenamed("5GSNR", "_5gsnr")\
                                         .filter(
@@ -358,8 +359,8 @@ class CellularScore:
         if df_ServiceTime is None:
             df_ServiceTime = self.df_ServiceTime
 
-        df_join = df_throughput.join(df_linkCapacity, "imsi" )\
-                                .join(df_ServiceTime, "sn" )
+        df_join = df_throughput.join(df_linkCapacity, "imsi", "full" )\
+                                .join(df_ServiceTime, "sn" ,"full" )
 
         throughput_score_weights = {
                                     "ultragauge_dl_score": 28,
