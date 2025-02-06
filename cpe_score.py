@@ -7,6 +7,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType
 import numpy as np
+import traceback
 import sys 
 sys.path.append('/usr/apps/vmas/scripts/ZS') 
 from MailSender import MailSender
@@ -120,7 +121,7 @@ class CellularScore:
                 .groupBy('IMSI', 'DEVICE_MODEL')\
                 .agg(F.max('UE_OVERALL_DL_SPEED').alias('UE_OVERALL_DL_SPEED'))
         except Exception as e:
-            mail_sender.send(
+            email_sender.send(
                     send_from="cellular_Score@verizon.com",
                     subject=f"ultragauge missed at {self.d}",
                     text=e
@@ -130,8 +131,6 @@ class CellularScore:
         # Continue with df_ultra as normal
         df_ultrag_price_cap = df_ultra.join(df_cust.select("IMSI", "MDN_5G", "PPLAN_CD", "PPLAN_DESC", "CPE_MODEL_NAME"), "IMSI", "right")\
             .join(df_price_cap, "PPLAN_CD", "right")\
-            .filter(F.col("UE_OVERALL_DL_SPEED").isNotNull())\
-            .filter(F.col("UE_OVERALL_DL_SPEED") != 0)\
             .withColumn(
                 "ULTRAGAUGE_DL_SCORE",
                 F.round(
@@ -276,7 +275,7 @@ class CellularScore:
                                                         F.when((F.col("_capacity")) > 100, 100)
                                                         .otherwise(F.col("_capacity")), 
                                                     4) )\
-                                        .groupby("sn","imsi")\
+                                        .groupby("sn", "MDN_5G")\
                                         .agg( 
                                             F.round(F.avg("lte_capacity"),2).alias("lte_capacity"), 
                                             F.round(F.avg("nw_capacity"),2).alias("nw_capacity"), 
@@ -284,11 +283,13 @@ class CellularScore:
                                             F.round(F.avg("Rate_Plan_Adjustment"),2).alias("Rate_Plan_Adjustment"), 
                                             F.round(F.avg("_capacity"),2).alias("capacity_score") 
                                             )\
-                                        .withColumn( "capacity_score_category", when(col("capacity_score") >= 80, "Excellent")
-                                                                                .when(col("capacity_score") >= 50, "Good")
-                                                                                .when(col("capacity_score") >= 30, "Fair")
-                                                                                .otherwise("Poor") )
-                                        
+                                        .withColumn( "capacity_score_category", 
+                                                    when(col("capacity_score").isNull(), None)
+                                                    .when(col("capacity_score") >= 80, "Excellent")
+                                                    .when(col("capacity_score") >= 50, "Good")
+                                                    .when(col("capacity_score") >= 30, "Fair")
+                                                    .otherwise("Poor") )
+
 
         return df_linkCapacity
 
@@ -343,7 +344,9 @@ class CellularScore:
                                                 F.round(100 - 20 * F.col("not_available_percentage") , 2) 
                                             )
                                         )\
-                                .withColumn( "availability_score_category", when(col("availability_score") == 100, "Excellent")
+                                .withColumn( "availability_score_category", 
+                                                when(col("availability_score").isNull(), None)
+                                                .when(col("availability_score") == 100, "Excellent")
                                                 .when(col("availability_score") >= 99.77, "Good")
                                                 .when(col("availability_score") >= 97.22, "Fair")
                                                 .otherwise("Poor") )
@@ -359,7 +362,7 @@ class CellularScore:
         if df_ServiceTime is None:
             df_ServiceTime = self.df_ServiceTime
 
-        df_join = df_throughput.join(df_linkCapacity, "imsi", "full" )\
+        df_join = df_throughput.join(df_linkCapacity, "MDN_5G", "full" )\
                                 .join(df_ServiceTime, "sn" ,"full" )
 
         throughput_score_weights = {
@@ -378,10 +381,14 @@ class CellularScore:
                                             2
                                         )
                                     )\
-                        .withColumn( "throughput_score_category", when(col("throughput_score") >= 80, "Excellent")
-                                                        .when(col("throughput_score") >= 60, "Good")
-                                                        .when(col("throughput_score") >= 30, "Fair")
-                                                        .otherwise("Poor") )\
+                            .withColumn(
+                                        "throughput_score_category",
+                                        when(col("throughput_score").isNull(), None)  # Set NULL if throughput_score is NULL
+                                        .when(col("throughput_score") >= 80, "Excellent")
+                                        .when(col("throughput_score") >= 60, "Good")
+                                        .when(col("throughput_score") >= 30, "Fair")
+                                        .otherwise("Poor")
+                                    )
 
 
         categorical_columns = [
@@ -413,22 +420,53 @@ class CellularScore:
 
 
 if __name__ == "__main__":
-    mail_sender = MailSender()
+    email_sender = MailSender()
     spark = SparkSession.builder\
             .appName('cpe_Score_ZheS')\
             .config("spark.sql.adapative.enabled","true")\
             .config("spark.ui.port","24041")\
             .enableHiveSupport().getOrCreate()
-    
+
     hdfs_pd = "hdfs://njbbvmaspd11.nss.vzwnet.com:9000/"
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
-    date_str = (date.today() - timedelta(1) ).strftime("%Y-%m-%d")
+    #date_str = (date.today() - timedelta(1) ).strftime("%Y-%m-%d")
+    #ins = CellularScore(d = date_str)
+    
 
-    ins = CellularScore(d = date_str)
-    #ins.df_ServiceTime.show(5)
-    ins.df_score.write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/all_score/{date_str}")
 
-    models = ['ASK-NCQ1338', 'ASK-NCQ1338FA',"ARC-XCI55AX", 'WNC-CR200A', "ASK-NCM1100"]
-    ins.df_score.filter( col("CPE_MODEL_NAME").isin( models )  )\
-                .write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/titan_score/{date_str}")
 
+    backfill_range = 4
+    parser = argparse.ArgumentParser(description="Inputs") 
+    parser.add_argument("--date", default=(date.today() - timedelta(1) ).strftime("%Y-%m-%d")) 
+    args_date = parser.parse_args().date
+    date_list = [( datetime.strptime( args_date, "%Y-%m-%d" )  - timedelta(days=i)).date() for i in range(backfill_range)][::-1]
+
+    hadoop_fs = spark._jvm.org.apache.hadoop.fs.FileSystem.get(spark._jsc.hadoopConfiguration())
+    def process_cpe_data(date_list, email_sender):
+        for date_val in date_list:
+            date_str = date_val.strftime('%Y-%m-%d')
+            file_path = f"{hdfs_pd}/user/ZheS/cpe_Score/all_score/{date_str}"
+
+            if hadoop_fs.exists(spark._jvm.org.apache.hadoop.fs.Path(file_path)):
+                print(f"data for {date_str} already exists.")
+                continue
+
+            try:
+
+                ins = CellularScore(d = date_str)
+                ins.df_score.write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/all_score/{date_str}")
+
+                models = ['ASK-NCQ1338', 'ASK-NCQ1338FA',"ARC-XCI55AX", 'WNC-CR200A', "ASK-NCM1100"]
+                ins.df_score.filter( col("CPE_MODEL_NAME").isin( models )  )\
+                            .write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/titan_score/{date_str}")
+
+            except Exception as e:
+                error_message = ( f"cpe_Score failed at {date_str}\n\n{traceback.format_exc()}" )
+                print(error_message)
+                email_sender.send(
+                                    send_from=f"cpe_Score@verizon.com",
+                                    subject=f"cpe_Score failed !!! at {date_str}",
+                                    text=error_message
+                                )
+    
+    process_cpe_data(date_list, email_sender)
