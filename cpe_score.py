@@ -80,11 +80,10 @@ class CellularScore:
         if custline_path is None:
             custline_path = self.custline_path
 
-        cpe_models_to_keep = ["ARC-XCI55AX", "ASK-NCQ1338FA", "WNC-CR200A", "ASK-NCQ1338", "FSNO21VA", "NCQ1338E", "ASK-NCM1100E", "ASK-NCM1100", "Others"]
-        cpe_models_to_keep = ['ASK-NCQ1338', 'ASK-NCQ1338FA', 'WNC-CR200A', "CR1000A", "CR1000B"]
-        #fiveg_pplan = ['51219', '27976', '53617', '50044', '50055', '50127', '50128', '67571', '67567', '50129', '67576', '67568', '50116', '50117', '50130', '39425', '39428']
-        #fourg_pplan = ['48390', '48423', '48445', '46799', '46798', '50010', '50011', '67577', '38365', '67584', '65655', '65656']
-
+        df_mapping = spark.read.option("header","true").csv(hdfs_pa + "/sha_data/combinedsnmappingv2")\
+                    .select("mdn","sn").distinct()\
+                    .withColumnRenamed("mdn", "MDN_5G")\
+        
         df_cust = spark.read.option("recursiveFileLookup", "true").option("header", "true")\
                         .csv(custline_path)\
                         .withColumnRenamed("VZW_IMSI", "IMSI")\
@@ -92,10 +91,9 @@ class CellularScore:
                         .withColumn("IMEI", F.expr("substring(IMEI, 1, length(IMEI)-1)"))\
                         .withColumn("CPE_MODEL_NAME", F.split(F.trim(F.col("DEVICE_PROD_NM")), " "))\
                         .withColumn("CPE_MODEL_NAME", F.col("CPE_MODEL_NAME")[F.size("CPE_MODEL_NAME") - 1])\
-                        .withColumn("CPE_MODEL_NAME", 
-                                    when(F.col("CPE_MODEL_NAME").isin(cpe_models_to_keep), F.col("CPE_MODEL_NAME")) 
-                                        .otherwise("Others"))\
-                        .dropDuplicates()
+                        .select("IMSI", "MDN_5G", "PPLAN_CD", "PPLAN_DESC", "CPE_MODEL_NAME")\
+                        .dropDuplicates()\
+                        .join( df_mapping, "MDN_5G" )
         
         return df_cust
     
@@ -107,7 +105,6 @@ class CellularScore:
 
         ultra_schema = StructType([
             StructField("IMSI", StringType(), True),
-            StructField("DEVICE_MODEL", StringType(), True),
             StructField("UE_OVERALL_DL_SPEED", DoubleType(), True)
         ])
 
@@ -115,11 +112,12 @@ class CellularScore:
         try:
             df_ultra = spark.read.option("header", "true")\
                 .csv(hdfs_pa + f"/fwa/npp_mdn_agg_insights_rtt/datadate={self.d}")\
-                .select("IMSI", 'DEVICE_MODEL', 'UE_OVERALL_DL_SPEED')\
+                .select("IMSI", 'UE_OVERALL_DL_SPEED')\
                 .filter(F.col("UE_OVERALL_DL_SPEED").isNotNull())\
                 .filter(F.col("UE_OVERALL_DL_SPEED") != 0)\
-                .groupBy('IMSI', 'DEVICE_MODEL')\
+                .groupBy('IMSI')\
                 .agg(F.max('UE_OVERALL_DL_SPEED').alias('UE_OVERALL_DL_SPEED'))
+            
         except Exception as e:
             email_sender.send(
                     send_from="cellular_Score@verizon.com",
@@ -129,8 +127,8 @@ class CellularScore:
             df_ultra = spark.createDataFrame([], ultra_schema)  # Create an empty DataFrame if not exists
 
         # Continue with df_ultra as normal
-        df_ultrag_price_cap = df_ultra.join(df_cust.select("IMSI", "MDN_5G", "PPLAN_CD", "PPLAN_DESC", "CPE_MODEL_NAME"), "IMSI", "right")\
-            .join(df_price_cap, "PPLAN_CD", "right")\
+        df_ultrag_price_cap = df_cust.join(df_ultra, "IMSI", "left")\
+            .join(df_price_cap, "PPLAN_CD", "left")\
             .withColumn(
                 "ULTRAGAUGE_DL_SCORE",
                 F.round(
@@ -140,8 +138,6 @@ class CellularScore:
             .withColumn(
                 "ULTRAGAUGE_DL_SCORE", col("ULTRAGAUGE_DL_SCORE")*100
             )\
-            .select("MDN_5G", "IMSI", "CPE_MODEL_NAME", "PPLAN_CD", "UE_OVERALL_DL_SPEED", "DL_CAP", "UL_CAP", "ULTRAGAUGE_DL_SCORE")
-
 
         try:
             speedtest_path = hdfs_pd + "/user/ZheS//5g_homeScore/speed_test/" + self.d
@@ -197,7 +193,7 @@ class CellularScore:
         if df_price_cap is None:
             df_price_cap = self.df_price_cap
 
-        df_heartbeat = df_heartbeat.join(df_cust.select("IMSI", "MDN_5G", "PPLAN_CD", "PPLAN_DESC", "CPE_MODEL_NAME"), "IMSI", "right")\
+        df_heartbeat = df_heartbeat.join(df_cust, ["sn","IMSI"], "right")\
                                     .join(df_price_cap, "PPLAN_CD", "right")\
 
         df_with_bandwidths = df_heartbeat.withColumnRenamed("SNR", "_4gsnr").withColumnRenamed("5GSNR", "_5gsnr")\
@@ -362,7 +358,7 @@ class CellularScore:
         if df_ServiceTime is None:
             df_ServiceTime = self.df_ServiceTime
 
-        df_join = df_throughput.join(df_linkCapacity, "MDN_5G", "full" )\
+        df_join = df_throughput.join(df_linkCapacity, ["sn","MDN_5G"], "full" )\
                                 .join(df_ServiceTime, "sn" ,"full" )
 
         throughput_score_weights = {
@@ -459,6 +455,23 @@ if __name__ == "__main__":
                 models = ['ASK-NCQ1338', 'ASK-NCQ1338FA',"ARC-XCI55AX", 'WNC-CR200A', "ASK-NCM1100"]
                 ins.df_score.filter( col("CPE_MODEL_NAME").isin( models )  )\
                             .write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/titan_score/{date_str}")
+                """
+                ins.df_throughput.write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/df_throughput/{date_str}")
+                ins.df_linkCapacity.write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/df_linkCapacity/{date_str}")
+                ins.df_ServiceTime.write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/df_ServiceTime/{date_str}")
+                """
+                location_df = spark.read.option("recursiveFileLookup", "true")\
+                        .parquet(hdfs_pd + "/user/ZheS/wifi_score_v4/County_location")\
+                        .select("sn","mdn","state","county", "latitude", "longitude")\
+                        .distinct()\
+                        .drop("wifiScore")
+
+                spark.read.parquet(hdfs_pd + f"/user/ZheS/cpe_Score/all_score/{date_str}")\
+                        .drop("MDN_5G","IMSI","IMEI")\
+                        .withColumn( "date", lit( date_str ))\
+                        .join(location_df, "sn")\
+                        .write.mode("overwrite")\
+                        .parquet(hdfs_pd + f"/user/ZheS/cpe_Score/cpeScore_location/{date_str}")
 
             except Exception as e:
                 error_message = ( f"cpe_Score failed at {date_str}\n\n{traceback.format_exc()}" )
