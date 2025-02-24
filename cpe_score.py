@@ -64,12 +64,23 @@ class CellularScore:
         self.df_score = self.get_score_df()
 
     def get_price_plan_df(self):
+        """
         price_plan_data = [
             ('67577', 50, 6), ('50011', 50, 6), ('38365', 50, 6), ('50010', 50, 6), ('75565', 50, 6), 
             ('65655', 50, 6), ('67584', 50, 6), ('65656', 50, 6), ('67571', 100, 10), ('50128', 300, 20), 
             ('50127', 300, 20), ('75561', 300, 20), ('67576', 300, 20), ('50130', 300, 20), ('50129', 300, 20), 
             ('67567', 400, 20), ('50044', 400, 20), ('50116', 1500, 75), ('67568', 1500, 75), ('75560', 1500, 75)
         ]
+        """
+        price_plan_data = [
+                            ('38365', 50, 6), ('39425', 1500, 75), ('39428', 1500, 75), ('46798', 10, 5), ('46799', 25, 5),
+                            ('48390', 10, 5), ('48423', 25, 5), ('48445', 50, 6), ('50010', 50, 6), ('50011', 50, 6),
+                            ('50044', 300, 20), ('50055', 300, 20), ('50116', 1500, 75), ('50117', 1500, 75), ('50127', 300, 20),
+                            ('50128', 300, 20), ('50129', 300, 20), ('50130', 300, 20), ('51219', 150, 10), ('53617', 300, 20),
+                            ('65655', 50, 6), ('65656', 50, 6), ('67567', 400, 20), ('67568', 1500, 75), ('67571', 100, 10),
+                            ('67576', 300, 20), ('67577', 50, 6), ('67584', 50, 6), ('75560', 1500, 75), ('75561', 300, 20),
+                            ('75565', 50, 6)
+                            ]
 
         columns = ['PPLAN_CD', 'DL_CAP', 'UL_CAP']
 
@@ -466,10 +477,17 @@ if __name__ == "__main__":
                         .distinct()\
                         .drop("wifiScore")
 
+                dg_date_str = (datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y%m%d")
+                df_dg = spark.read.parquet(f"/usr/apps/vmas/sha_data/bhrx_hourly_data/DeviceGroups/{dg_date_str}")\
+                            .withColumn("sn", F.regexp_extract(F.col("rowkey"), r'-(\w+)', 1))\
+                            .select("sn",col("Tplg_Data_fw_ver").alias("firmware"))\
+                            .distinct()
+                
                 spark.read.parquet(hdfs_pd + f"/user/ZheS/cpe_Score/all_score/{date_str}")\
                         .drop("MDN_5G","IMSI","IMEI")\
                         .withColumn( "date", lit( date_str ))\
                         .join(location_df, "sn")\
+                        .join(df_dg, "sn")\
                         .write.mode("overwrite")\
                         .parquet(hdfs_pd + f"/user/ZheS/cpe_Score/cpeScore_location/{date_str}")
 
