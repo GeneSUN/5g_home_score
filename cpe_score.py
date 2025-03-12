@@ -55,7 +55,7 @@ class CellularScore:
         self.df_heartbeat = spark.read.option("header","true").csv( hdfs_pa + f"/user/kovvuve/owl_history_v3/date={self.d}" )\
                                 .dropDuplicates()\
                                 .withColumn('time', F.from_unixtime(col('ts') / 1000.0).cast('timestamp'))
-        self.custline_path = hdfs_pa + "/user/kovvuve/EDW_SPARK/cust_line/"+ self.d
+        
         self.df_price_cap = self.get_price_plan_df()
         self.df_cust = self.get_customer_df()
         self.df_throughput = self.get_throughput_df()
@@ -87,26 +87,38 @@ class CellularScore:
         df_price_cap = spark.createDataFrame(price_plan_data, columns)
         return df_price_cap
 
-    def get_customer_df(self, custline_path = None):
-        if custline_path is None:
-            custline_path = self.custline_path
+    def get_customer_df(self, date_val = None):
+        if date_val is None:
+            date_val =  datetime.strptime(self.d, '%Y-%m-%d')    
 
+        
         df_mapping = spark.read.option("header","true").csv(hdfs_pa + "/sha_data/combinedsnmappingv2")\
                     .select("mdn","sn").distinct()\
-                    .withColumnRenamed("mdn", "MDN_5G")\
+                    .withColumnRenamed("mdn", "MDN_5G")
+ 
+        for i in range(3):
+            loop_date_str = (date_val - timedelta(days=i)).strftime('%Y-%m-%d')
+            custline_path = hdfs_pa + "/user/kovvuve/EDW_SPARK/cust_line/"+ loop_date_str
+            
+            try:
+                df_cust = spark.read.option("recursiveFileLookup", "true").option("header", "true")\
+                                .csv(custline_path)\
+                                .withColumnRenamed("VZW_IMSI", "IMSI")\
+                                .withColumnRenamed("MTN", "MDN_5G")\
+                                .withColumn("IMEI", F.expr("substring(IMEI, 1, length(IMEI)-1)"))\
+                                .withColumn("CPE_MODEL_NAME", F.split(F.trim(F.col("DEVICE_PROD_NM")), " "))\
+                                .withColumn("CPE_MODEL_NAME", F.col("CPE_MODEL_NAME")[F.size("CPE_MODEL_NAME") - 1])\
+                                .select("IMSI", "MDN_5G", "PPLAN_CD", "PPLAN_DESC", "CPE_MODEL_NAME")\
+                                .dropDuplicates()\
+                                .join(df_mapping, "MDN_5G")
+                
+                return df_cust
+            
+            except Exception as e:
+                print(f"Error reading data for {loop_date_str}: {e}")
         
-        df_cust = spark.read.option("recursiveFileLookup", "true").option("header", "true")\
-                        .csv(custline_path)\
-                        .withColumnRenamed("VZW_IMSI", "IMSI")\
-                        .withColumnRenamed("MTN", "MDN_5G")\
-                        .withColumn("IMEI", F.expr("substring(IMEI, 1, length(IMEI)-1)"))\
-                        .withColumn("CPE_MODEL_NAME", F.split(F.trim(F.col("DEVICE_PROD_NM")), " "))\
-                        .withColumn("CPE_MODEL_NAME", F.col("CPE_MODEL_NAME")[F.size("CPE_MODEL_NAME") - 1])\
-                        .select("IMSI", "MDN_5G", "PPLAN_CD", "PPLAN_DESC", "CPE_MODEL_NAME")\
-                        .dropDuplicates()\
-                        .join( df_mapping, "MDN_5G" )
-        
-        return df_cust
+        return None
+
     
     def get_throughput_df(self, df_cust = None,df_price_cap = None):
         if df_cust is None:
@@ -121,13 +133,17 @@ class CellularScore:
 
         # Try to read the CSV and handle the case where it might not exist
         try:
-            df_ultra = spark.read.option("header", "true")\
-                .csv(hdfs_pa + f"/fwa/npp_mdn_agg_insights_rtt/datadate={self.d}")\
-                .select("IMSI", 'UE_OVERALL_DL_SPEED')\
-                .filter(F.col("UE_OVERALL_DL_SPEED").isNotNull())\
-                .filter(F.col("UE_OVERALL_DL_SPEED") != 0)\
-                .groupBy('IMSI')\
-                .agg(F.max('UE_OVERALL_DL_SPEED').alias('UE_OVERALL_DL_SPEED'))
+            self.d = datetime.strptime(self.d, '%Y-%m-%d')
+            prev_dates = [(self.d - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(1, 4)]
+
+            # Read data from the previous 3 days
+            df_ultra = spark.read.option("header", "true") \
+                .csv([hdfs_pa + f"/fwa/npp_mdn_agg_insights_rtt/datadate={date}" for date in prev_dates]) \
+                .select("IMSI", 'UE_OVERALL_DL_SPEED') \
+                .filter(F.col("UE_OVERALL_DL_SPEED").isNotNull()) \
+                .filter(F.col("UE_OVERALL_DL_SPEED") != 0) \
+                .groupBy('IMSI') \
+                .agg(F.avg('UE_OVERALL_DL_SPEED').alias('UE_OVERALL_DL_SPEED'))
             
         except Exception as e:
             email_sender.send(
