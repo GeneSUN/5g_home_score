@@ -410,8 +410,8 @@ def check_path_exists(path: str) -> bool:
 from datetime import datetime, timedelta
 import pytz
 
-def get_shifted_date_eastern(hours_shift=3):
-    eastern = pytz.timezone('US/Eastern')
+def get_shifted_date_eastern(hours_shift=0):
+    eastern = pytz.timezone('UTC')
     
     # Current time in Eastern
     now_et = datetime.now(eastern)
@@ -583,7 +583,7 @@ if __name__ == "__main__":
 
     while True:
         date_str = get_shifted_date_eastern()
-        next_date_str = (date.today() + timedelta(1) ).strftime("%Y-%m-%d")
+        next_date_str = get_shifted_date_eastern(24)
         processed_hours = set()  # Track processed hours
 
         for hour in range(24):
