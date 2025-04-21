@@ -177,7 +177,7 @@ class CellularScore:
 
         df_with_bandwidths = df_heartbeat.withColumnRenamed("SNR", "_4gsnr").withColumnRenamed("5GSNR", "_5gsnr")\
                                         .filter(
-                                                    (F.col("_4gsnr").between(-10, 40)) & (F.col("_4gsnr") != 0) & 
+                                                    (F.col("_4gsnr").between(-10, 40)) & (F.col("_4gsnr") != 0) | 
                                                     (F.col("_5gsnr").between(-10, 40)) & (F.col("_5gsnr") != 0)
                                                 )\
                                         .withColumn(
@@ -429,12 +429,13 @@ def get_shifted_date_eastern(hours_shift=0):
 
 if __name__ == "__main__":
     email_sender = MailSender()
+    """
     spark = SparkSession.builder\
                         .appName('HourlyScoreProcessing')\
                         .config("spark.sql.adapative.enabled","true")\
                         .config("spark.ui.port","24041")\
                         .enableHiveSupport().getOrCreate()
-
+    """
 
     from pyspark.sql.functions import col, from_json
     from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, BooleanType
@@ -587,7 +588,7 @@ if __name__ == "__main__":
         processed_hours = set()  # Track processed hours
 
         for hour in range(24):
-
+            
             hour_str = f"{hour:02d}"
             next_hour = f"{ (hour+1) :02d}"
             owl_path = f"{owl_base_path}date={date_str.replace('-', '')}/hour={hour_str}"
@@ -598,6 +599,13 @@ if __name__ == "__main__":
             # Wait for the file to appear
             while True:
                 """                """
+                spark = SparkSession.builder\
+                                    .appName('HourlyScoreProcessing')\
+                                    .config("spark.sql.adapative.enabled","true")\
+                                    .config("spark.ui.port","24041")\
+                                    .enableHiveSupport().getOrCreate()
+
+
                 if check_path_exists( output_path):
                     print(output_path, "existed")
                     break # file already exist, break to next hour
@@ -620,6 +628,7 @@ if __name__ == "__main__":
                     break
 
                 print(f"Waiting for {owl_path} to be created...")
+                spark.stop()
                 time.sleep(300)  # Check every 5 minutes
 
         # after finish hour=23, for loop ends, move on to next day
