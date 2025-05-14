@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta, date
 from pyspark.sql.window import Window
-from pyspark.sql.functions import sum, lag, col, split, concat_ws, lit ,udf,count, max,lit,avg, when,concat_ws,percentile_approx,explode
+from pyspark.sql.functions import sum,from_json, lag, col, split, concat_ws, lit ,udf,count, max,lit,avg, when,concat_ws,percentile_approx,explode
 from pyspark.sql.functions import udf 
 from pyspark.sql.types import FloatType
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, BooleanType
 import numpy as np
 import traceback
 import sys 
@@ -13,6 +13,119 @@ sys.path.append('/usr/apps/vmas/scripts/ZS')
 from MailSender import MailSender
 import argparse 
 from functools import reduce
+
+schema = StructType([
+    StructField("MDN", StringType(), True),
+    StructField("SIMState", IntegerType(), True),
+    StructField("IMSI", StringType(), True),
+    StructField("IMEI", StringType(), True),
+    StructField("SwV", StringType(), True),
+    StructField("Status", BooleanType(), True),
+    StructField("5GUptimeTimestamp", StringType(), True),
+    StructField("5GDowntimeTimestamp", StringType(), True),
+    StructField("B1MeasurementConfigurationStatus", BooleanType(), True),
+    StructField("B1MeasurementConfigurationBands", StringType(), True),
+    StructField("SNR", StringType(), True),
+    StructField("CurrentNetwork", StringType(), True),
+    StructField("HomeRoam", StringType(), True),
+    StructField("MCC", StringType(), True),
+    StructField("MNC", StringType(), True),
+    StructField("CellID", IntegerType(), True),
+    StructField("PCellID", StringType(), True),
+    StructField("TotalBytesReceived", IntegerType(), True),
+    StructField("TotalBytesSent", IntegerType(), True),
+    StructField("TotalPacketReceived", IntegerType(), True),
+    StructField("TotalPacketSent", IntegerType(), True),
+    StructField("MCS", StringType(), True),
+    StructField("PathLoss", IntegerType(), True),
+    StructField("BRSRP", DoubleType(), True),
+    StructField("EARFCN_DL", IntegerType(), True),
+    StructField("EARFCN_UL", IntegerType(), True),
+    StructField("5GEARFCN_DL", StringType(), True),
+    StructField("5GEARFCN_UL", StringType(), True),
+    StructField("PUCCH_TX_PWR", DoubleType(), True),
+    StructField("CQI", IntegerType(), True),
+    StructField("Rank", IntegerType(), True),
+    StructField("MaxMTUSize", IntegerType(), True),
+    StructField("LTERadioLinkFailureCount", IntegerType(), True),
+    StructField("LTERACHAttemptCount", IntegerType(), True),
+    StructField("LTERACHFailureCount", IntegerType(), True),
+    StructField("RRCConnectTime", StringType(), True),
+    StructField("RRCConnectRequestCount", IntegerType(), True),
+    StructField("RRCConnectFailureCount", IntegerType(), True),
+    StructField("NRSCGChangeCount", IntegerType(), True),
+    StructField("NRSCGChangeFailureCount", IntegerType(), True),
+    StructField("LTEHandOverAttemptCount", IntegerType(), True),
+    StructField("LTEHandOverFailureCount", IntegerType(), True),
+    StructField("LTEPDSCHThroughput", DoubleType(), True),
+    StructField("LTEPDSCHPeakThroughput", DoubleType(), True),
+    StructField("LTEPUSCHThroughput", DoubleType(), True),
+    StructField("LTEPUSCHPeakThroughput", DoubleType(), True),
+    StructField("RxPDCPBytes", IntegerType(), True),
+    StructField("TxPDCPBytes", IntegerType(), True),
+    StructField("4GRSRP", IntegerType(), True),
+    StructField("4GRSRQ", IntegerType(), True),
+    StructField("4GSignal", IntegerType(), True),
+    StructField("5GPCI", StringType(), True),
+    StructField("RSRQ", DoubleType(), True),
+    StructField("5GSNR", DoubleType(), True),
+    StructField("NRPDSCHInitBLER", IntegerType(), True),
+    StructField("NRPUSCHInitBLER", IntegerType(), True),
+    StructField("GPSEnabled", BooleanType(), True),
+    StructField("GPSAltitude", StringType(), True),
+    StructField("GPSLatitude", StringType(), True),
+    StructField("GPSLongitude", StringType(), True),
+    StructField("5GModemTempThreshold", StringType(), True),
+    StructField("5GNRSub6AntennaTempThreshold", StringType(), True),
+    StructField("4GAntennaTempThreshold", StringType(), True),
+    StructField("ModemTemp", StringType(), True),
+    StructField("5GNRSub6AntennaTemp", StringType(), True),
+    StructField("4GAntennaTemp", StringType(), True),
+    StructField("4GTempFallback", BooleanType(), True),
+    StructField("4GTempFallbackCause", IntegerType(), True),
+    StructField("5GServiceThermalDegradation", BooleanType(), True),
+    StructField("5GServiceThermalDegradationCause", IntegerType(), True),
+    StructField("ModemLoggingEnabled", BooleanType(), True),
+
+    StructField("4GPccBand", IntegerType(), True),
+    StructField("4GScc1Band", IntegerType(), True),
+    StructField("4GScc2Band", IntegerType(), True),
+    StructField("4GScc3Band", IntegerType(), True),
+
+    StructField("5GPccBand", IntegerType(), True),
+    StructField("5GScc1Band", IntegerType(), True),
+    StructField("ServiceUptime", StringType(), True),
+    StructField("ServiceDowntime", StringType(), True),
+    StructField("ServiceUptimeTimestamp", StringType(), True),
+    StructField("ServiceDowntimeTimestamp", StringType(), True),
+    StructField("5GUW_Allowed", BooleanType(), True),
+    StructField("5GNRRadioLinkFailureCount", IntegerType(), True),
+    StructField("5GNRRACHAttemptCount", IntegerType(), True),
+    StructField("5GNRRACHFailureCount", IntegerType(), True),
+    StructField("5GNRRRCConnectTime", StringType(), True),
+    StructField("5GNRRRCConnectRequestCount", IntegerType(), True),
+    StructField("5GNRRRCConnectFailureCount", IntegerType(), True),
+    StructField("5GNRHandOverAttemptCount", IntegerType(), True),
+    StructField("5GNRHandOverFailureCount", IntegerType(), True),
+    StructField("5GNRPDSCHThroughput", DoubleType(), True),
+    StructField("5GNRPUSCHThroughput", DoubleType(), True),
+    StructField("5GNRPDSCHPeakThroughput", DoubleType(), True),
+    StructField("5GNRPUSCHPeakThroughput", DoubleType(), True),
+    StructField("5GNRRxPDCPBytes", IntegerType(), True),
+    StructField("5GNRTxPDCPBytes", IntegerType(), True),
+    StructField("NRSCGFailureCount", IntegerType(), True),
+    StructField("CPUUsage", StringType(), True),
+    StructField("Uptime", StringType(), True),
+    StructField("RebootCause", StringType(), True),
+    StructField("Manufacturer", StringType(), True),
+    StructField("ModelName", StringType(), True),
+    StructField("FmV", StringType(), True),
+    StructField("HwV", StringType(), True),
+    StructField("MemoryAvail", StringType(), True),
+    StructField("MemoryPercentFree", DoubleType(), True),
+    StructField("ipv4_ip", StringType(), True),
+    StructField("ipv6_ip", StringType(), True)
+])
 
 def convert_to_numeric(df, col_name):
     return df.withColumn(f"{col_name}_numeric", F.when(F.col(col_name) == "Poor", 1)
@@ -42,7 +155,7 @@ class ScoreCalculator:
                 total_weight += weight 
 
         return score / total_weight if total_weight != 0 else None 
-    
+
 class CellularScore:
     global hdfs_pa, hdfs_pd, count_features
 
@@ -50,11 +163,10 @@ class CellularScore:
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
     count_features = ["LTERACHFailureCount", "LTEHandOverFailureCount", "NRSCGChangeFailureCount","RRCConnectFailureCount"]
     
-    def __init__(self,d): 
+    def __init__(self,d,df_heartbeat): 
         self.d = d
-        self.df_heartbeat = spark.read.option("header","true").csv( hdfs_pa + f"/user/kovvuve/owl_history_v3/date={self.d}" )\
-                                .dropDuplicates()\
-                                .withColumn('time', F.from_unixtime(col('ts') / 1000.0).cast('timestamp'))
+        self.df_heartbeat = df_heartbeat
+
         
         self.df_price_cap = self.get_price_plan_df()
         self.df_cust = self.get_customer_df()
@@ -225,7 +337,7 @@ class CellularScore:
 
         df_with_bandwidths = df_heartbeat.withColumnRenamed("SNR", "_4gsnr").withColumnRenamed("5GSNR", "_5gsnr")\
                                         .filter(
-                                                    (F.col("_4gsnr").between(-10, 40)) & (F.col("_4gsnr") != 0) & 
+                                                    (F.col("_4gsnr").between(-10, 40)) & (F.col("_4gsnr") != 0) |
                                                     (F.col("_5gsnr").between(-10, 40)) & (F.col("_5gsnr") != 0)
                                                 )\
                                         .withColumn(
@@ -476,34 +588,42 @@ if __name__ == "__main__":
 
             try:
 
-                ins = CellularScore(d = date_str)
+                owl_base_path = hdfs_pa + "/sha_data/OWLHistory/"
+                owl_path = f"{owl_base_path}date={date_str.replace('-', '')}/"
+                df_owl = spark.read.parquet(owl_path)\
+                            .filter(col("Owl_Data_fwa_cpe_data").isNotNull())\
+                            .withColumn("fwa_cpe_data", from_json(col("Owl_Data_fwa_cpe_data"), schema))\
+                            .select("rowkey", "ts", "Tplg_Data_model_name", "fwa_cpe_data.*")\
+                            .withColumn("SNR", col("SNR").cast("double"))\
+                            .dropDuplicates()\
+                            .withColumn("sn", F.regexp_extract(F.col("rowkey"), r'-(\w+)_', 1))\
+                            .withColumn('time', F.from_unixtime(col('ts') / 1000.0).cast('timestamp'))
+        
+                ins = CellularScore(d = date_str, df_heartbeat = df_owl)
                 ins.df_score.write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/all_score/{date_str}")
 
                 models = ['ASK-NCQ1338', 'ASK-NCQ1338FA',"ARC-XCI55AX", 'WNC-CR200A', "ASK-NCM1100"]
                 ins.df_score.filter( col("CPE_MODEL_NAME").isin( models )  )\
                             .write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/titan_score/{date_str}")
-                """
-                ins.df_throughput.write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/df_throughput/{date_str}")
-                ins.df_linkCapacity.write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/df_linkCapacity/{date_str}")
-                ins.df_ServiceTime.write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/df_ServiceTime/{date_str}")
-                """
+
                 location_df = spark.read.option("recursiveFileLookup", "true")\
                         .parquet(hdfs_pd + "/user/ZheS/wifi_score_v4/County_location")\
-                        .select("sn","mdn","state","county", "latitude", "longitude")\
+                        .select("sn","state","county", "latitude", "longitude")\
                         .distinct()\
                         .drop("wifiScore")
 
                 dg_date_str = (datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y%m%d")
-                df_dg = spark.read.parquet(f"/usr/apps/vmas/sha_data/bhrx_hourly_data/DeviceGroups/{dg_date_str}")\
+                df_dg = spark.read.parquet( f"{hdfs_pa}/sha_data/DeviceGroups/date={ dg_date_str  }" )\
                             .withColumn("sn", F.regexp_extract(F.col("rowkey"), r'-(\w+)', 1))\
                             .select("sn",col("Tplg_Data_fw_ver").alias("firmware"))\
                             .distinct()
                 
                 spark.read.parquet(hdfs_pd + f"/user/ZheS/cpe_Score/all_score/{date_str}")\
+                        .withColumn("mdn",   col("MDN_5G") )\
                         .drop("MDN_5G","IMSI","IMEI")\
                         .withColumn( "date", lit( date_str ))\
-                        .join(location_df, "sn")\
-                        .join(df_dg, "sn")\
+                        .join(location_df, "sn","left")\
+                        .join(df_dg, "sn","left")\
                         .write.mode("overwrite")\
                         .parquet(hdfs_pd + f"/user/ZheS/cpe_Score/cpeScore_location/{date_str}")
 
