@@ -556,9 +556,11 @@ class CellularScore:
 
 if __name__ == "__main__":
     email_sender = MailSender()
+    desired_partition_number = 2000
     spark = SparkSession.builder\
             .appName('cpe_Score_ZheS')\
             .config("spark.sql.adapative.enabled","true")\
+            .config("spark.sql.shuffle.partitions", desired_partition_number)\
             .config("spark.ui.port","24041")\
             .enableHiveSupport().getOrCreate()
 
@@ -566,7 +568,6 @@ if __name__ == "__main__":
     hdfs_pa =  'hdfs://njbbepapa1.nss.vzwnet.com:9000'
     #date_str = (date.today() - timedelta(1) ).strftime("%Y-%m-%d")
     #ins = CellularScore(d = date_str)
-    
 
 
 
@@ -587,6 +588,8 @@ if __name__ == "__main__":
                 continue
 
             try:
+                import time
+                start_time = time.perf_counter()
 
                 owl_base_path = hdfs_pa + "/sha_data/OWLHistory/"
                 owl_path = f"{owl_base_path}date={date_str.replace('-', '')}/"
@@ -601,9 +604,14 @@ if __name__ == "__main__":
         
                 ins = CellularScore(d = date_str, df_heartbeat = df_owl)
                 ins.df_score.write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/all_score/{date_str}")
+                end_time = time.perf_counter()
 
+                elapsed_time = end_time - start_time
+                print(f"Function ran in {elapsed_time:.4f} seconds")
+                
                 models = ['ASK-NCQ1338', 'ASK-NCQ1338FA',"ARC-XCI55AX", 'WNC-CR200A', "ASK-NCM1100"]
-                ins.df_score.filter( col("CPE_MODEL_NAME").isin( models )  )\
+                df_score = spark.read.parquet(f"/user/ZheS/cpe_Score/all_score/{date_str}")
+                df_score.filter( col("CPE_MODEL_NAME").isin( models )  )\
                             .write.mode("overwrite").parquet(f"/user/ZheS/cpe_Score/titan_score/{date_str}")
 
                 location_df = spark.read.option("recursiveFileLookup", "true")\
@@ -635,5 +643,5 @@ if __name__ == "__main__":
                                     subject=f"cpe_Score failed !!! at {date_str}",
                                     text=error_message
                                 )
-    
+
     process_cpe_data(date_list, email_sender)
