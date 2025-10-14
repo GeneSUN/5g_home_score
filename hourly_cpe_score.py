@@ -177,7 +177,7 @@ class CellularScore:
 
         df_with_bandwidths = df_heartbeat.withColumnRenamed("SNR", "_4gsnr").withColumnRenamed("5GSNR", "_5gsnr")\
                                         .filter(
-                                                    (F.col("_4gsnr").between(-10, 40)) & (F.col("_4gsnr") != 0) & 
+                                                    (F.col("_4gsnr").between(-10, 40)) & (F.col("_4gsnr") != 0) | 
                                                     (F.col("_5gsnr").between(-10, 40)) & (F.col("_5gsnr") != 0)
                                                 )\
                                         .withColumn(
@@ -552,52 +552,8 @@ if __name__ == "__main__":
         output_path = hdfs_pd + f"{output_base_path}{date_str}/hr={hour_str}"
         ins.df_score.write.mode("overwrite").parquet(output_path)
 
-
-
-    hadoop_fs = spark._jvm.org.apache.hadoop.fs.FileSystem.get(spark._jsc.hadoopConfiguration())
-
-    """Monitors HDFS and processes hourly files as they arrive."""
-
-    while True:
-        date_str = (date.today() ).strftime("%Y-%m-%d")
-        next_date_str = (date.today() + timedelta(1) ).strftime("%Y-%m-%d")
-        processed_hours = set()  # Track processed hours
-
-        for hour in range(23):
-
-            hour_str = f"{hour:02d}"
-            next_hour = f"{ (hour+1) :02d}"
-            owl_path = f"{owl_base_path}date={date_str.replace('-', '')}/hour={hour_str}"
-            output_path = hdfs_pd + f"{output_base_path}{date_str}/hr={hour_str}"
-
-            next_hour_owl_path = f"{owl_base_path}date={date_str.replace('-', '')}/hour={ next_hour }"
-
-            # Wait for the file to appear
-            while True:
-                try:
-                    spark.read.parquet( output_path)
-                    print(output_path, "existed")
-                    break # file already exist, break to next hour
-                except:
-                    print("")  
-
-                # next hour source file created, means: current hour source file completed
-                if hadoop_fs.exists(spark._jvm.org.apache.hadoop.fs.Path(next_hour_owl_path)):
-                    print(f"Found {owl_path}, processing... {output_path}")
-                    process_hourly_data(date_str, hour_str)
-                    processed_hours.add(hour_str)
-                    break
-                
-                # next day source file created, means: last hour current day source file completed
-                next_day_owl_path = f"{owl_base_path}date={next_date_str.replace('-', '')}"
-                if hadoop_fs.exists(spark._jvm.org.apache.hadoop.fs.Path(next_hour_owl_path)):
-                    print(f"Found hour 23, processing... {output_path}")
-                    process_hourly_data(date_str, "23")
-                    processed_hours.add(hour_str)
-                    break
-
-                print(f"Waiting for {owl_path} to be created...")
-                time.sleep(300)  # Check every 5 minutes
-
-        # after finish hour=23, for loop ends, move on to next day
-
+    current_datetime = datetime.now()
+    date_str = current_datetime.strftime("%Y-%m-%d")
+    hour_str = current_datetime.strftime("%H")
+    process_hourly_data(date_str, hour_str)
+    sys.exit()
