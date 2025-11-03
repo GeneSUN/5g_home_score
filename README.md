@@ -1,5 +1,4 @@
-# 📶 Cellular Score Documentation (Z. Sun)
-
+# 📶 Cellular Score Documentation 
 This document outlines the methodology used to compute a **daily cellular performance score** for each **Fixed Wireless Access (FWA)** service account (MDN).  
 The score integrates **Availability**, **Link Capacity / Quality**, and **Throughput** into a single overall indicator of network performance.
 
