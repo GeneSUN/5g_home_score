@@ -4,6 +4,15 @@ The score integrates **Availability**, **Link Capacity / Quality**, and **Throug
 
 <img width="1550" height="305" alt="Screenshot 2025-11-02 at 5 10 11 PM" src="https://github.com/user-attachments/assets/157fe70e-beac-4c79-bf2d-81b9fc14e982" />
 
+----
+
+This is the Second Phase of Cellular Score, 
+- the first version is in https://github.com/GeneSUN/5g_home_score/tree/main/History
+- the third version is in https://github.com/GeneSUN/Anomaly_Detection_toolkit/tree/main
+
+<img width="1537" height="382" alt="Screenshot 2025-11-02 at 5 28 36 PM" src="https://github.com/user-attachments/assets/75ab2590-94f7-447d-8bf2-5694ee9fb66f" />
+
+
 ---
 
 ## 🧮 Overview
@@ -36,37 +45,6 @@ The score integrates **Availability**, **Link Capacity / Quality**, and **Throug
     - Use daily deltas of cumulative counters.  
     - Handle counter resets or spikes.  
     - Split downtime that spans midnight across days.
-
----
-
-## 📡 Link Capacity / Quality Score
-
-**Goal:** Quantify potential bandwidth and signal quality of the FWA link.
-
-### A. Bandwidth Estimation
-Derived per record from network band info:
-
-| Fields | Examples |
-|---------|-----------|
-| `_4gsnr`, `_5gsnr` | Signal-to-Noise Ratios |
-| `4GPccBand`, `5GPccBand` | Primary component carriers |
-| `5GEARFCN_DL` | Downlink frequency |
-| `_nwbandwidth`, `_cbandbandwidths` | Estimated bandwidths (MHz) |
-
-### B. Quality %
-Compare measured SINR to best-possible values for 4G and 5G.
-
-### C. Capacity per Record
-
-- **Service Downtime** – actual offline duration.  
-- **RACH Failures** – random-access connection failures (LTE & NR). Each adds 0.01 s downtime.  
-- **Connection Failures** – failed sessions; each adds 1 s downtime.  
-- **Availability Score** applies a ×20 amplification to penalize even short outages.  
-- Minimum score = 0 (even if computed value is negative).  
-- **Error Checks:**  
-  - Use daily deltas of cumulative counters.  
-  - Handle counter resets or spikes.  
-  - Split downtime that spans midnight across days.
 
 ---
 
