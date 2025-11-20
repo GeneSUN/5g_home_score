@@ -5,6 +5,7 @@ The score integrates **Availability**, **Link Capacity / Quality**, and **Throug
 <img width="1550" height="305" alt="Screenshot 2025-11-02 at 5 10 11 PM" src="https://github.com/user-attachments/assets/157fe70e-beac-4c79-bf2d-81b9fc14e982" />
 
 ----
+## History
 
 This is the Second Phase of Cellular Score, 
 - the first version is in https://github.com/GeneSUN/5g_home_score/tree/main/History
